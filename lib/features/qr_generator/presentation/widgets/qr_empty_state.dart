@@ -129,6 +129,24 @@ class QrEmptyState extends StatelessWidget {
                   QrPayloadType.email,
                 ),
               ),
+              _buildPresetChip(
+                context,
+                icon: Icons.contact_page_rounded,
+                label: 'Alex (vCard)',
+                onTap: () => onSelectPreset(
+                  'Alex Morgan',
+                  QrPayloadType.contact,
+                ),
+              ),
+              _buildPresetChip(
+                context,
+                icon: Icons.sms_rounded,
+                label: 'SMS Message',
+                onTap: () => onSelectPreset(
+                  '+1 800 555 0199',
+                  QrPayloadType.sms,
+                ),
+              ),
             ],
           ),
         ],

@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:qr_code_generator/core/theme/app_theme.dart';
 import 'package:qr_code_generator/features/qr_generator/controllers/qr_generator_controller.dart';
-import 'package:qr_code_generator/features/qr_generator/models/qr_payload_type.dart';
+import 'qr_dynamic_form.dart';
+import 'qr_type_selector.dart';
 
-/// Interactive input card for selecting content type and entering data.
+/// Card hosting the QR Type Selector, dynamic form fields, and generation action.
 class QrInputCard extends StatelessWidget {
   final QrGeneratorController controller;
 
@@ -17,7 +18,7 @@ class QrInputCard extends StatelessWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final payload = controller.payloadType;
-    final hasText = controller.textController.text.isNotEmpty;
+    final hasContent = controller.hasContent;
     final hasError = controller.validationError != null;
 
     return Container(
@@ -43,7 +44,7 @@ class QrInputCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Section Title & Char Count
+          // Section Title & Type Badge
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -63,7 +64,7 @@ class QrInputCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    'Content & Type',
+                    'QR Content Type',
                     style: theme.textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w700,
                       fontSize: 15,
@@ -71,146 +72,33 @@ class QrInputCard extends StatelessWidget {
                   ),
                 ],
               ),
-              if (hasText)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? const Color(0xFF1E293B)
-                        : const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    '${controller.textController.text.length} chars',
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w500,
-                      color: isDark
-                          ? AppTheme.textSecondaryDark
-                          : AppTheme.textSecondaryLight,
-                    ),
+              if (hasContent)
+                TextButton.icon(
+                  onPressed: () => controller.clearCurrentForm(),
+                  icon: const Icon(Icons.clear_rounded, size: 14),
+                  label: const Text('Clear Form', style: TextStyle(fontSize: 12)),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppTheme.errorColor,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    visualDensity: VisualDensity.compact,
                   ),
                 ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
 
-          // Payload Type Selector
-          SizedBox(
-            height: 38,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              itemCount: QrPayloadType.values.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (context, index) {
-                final type = QrPayloadType.values[index];
-                final isSelected = type == payload;
-
-                return ChoiceChip(
-                  label: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        type.icon,
-                        size: 15,
-                        color: isSelected
-                            ? Colors.white
-                            : (isDark
-                                ? const Color(0xFF94A3B8)
-                                : AppTheme.textSecondaryLight),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        type.label,
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          fontWeight:
-                              isSelected ? FontWeight.w600 : FontWeight.w500,
-                          color: isSelected
-                              ? Colors.white
-                              : (isDark
-                                  ? const Color(0xFFE2E8F0)
-                                  : AppTheme.textPrimaryLight),
-                        ),
-                      ),
-                    ],
-                  ),
-                  selected: isSelected,
-                  onSelected: (selected) {
-                    if (selected) {
-                      controller.setPayloadType(type);
-                    }
-                  },
-                  selectedColor: AppTheme.primaryColor,
-                  backgroundColor: isDark
-                      ? const Color(0xFF1E293B)
-                      : const Color(0xFFF1F5F9),
-                  showCheckmark: false,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(
-                      color: isSelected
-                          ? AppTheme.primaryColor
-                          : (isDark
-                              ? const Color(0xFF334155)
-                              : const Color(0xFFE2E8F0)),
-                      width: 1,
-                    ),
-                  ),
-                );
-              },
-            ),
+          // 7-Type Selector Chips
+          QrTypeSelector(
+            selectedType: payload,
+            onTypeSelected: (type) => controller.setPayloadType(type),
           ),
           const SizedBox(height: 16),
 
-          // Text Input Field
-          TextField(
-            controller: controller.textController,
-            keyboardType: payload.keyboardType,
-            minLines: 2,
-            maxLines: 5,
-            textInputAction: TextInputAction.done,
-            onSubmitted: (_) => controller.generateQr(),
-            style: TextStyle(
-              fontSize: 14.5,
-              color: isDark
-                  ? AppTheme.textPrimaryDark
-                  : AppTheme.textPrimaryLight,
-            ),
-            decoration: InputDecoration(
-              hintText: payload.hintText,
-              prefixIcon: Padding(
-                padding: const EdgeInsets.only(left: 14, right: 10, top: 12),
-                child: Align(
-                  alignment: Alignment.topCenter,
-                  widthFactor: 1.0,
-                  heightFactor: 1.0,
-                  child: Icon(
-                    payload.icon,
-                    size: 20,
-                    color: AppTheme.primaryColor,
-                  ),
-                ),
-              ),
-              suffixIcon: hasText
-                  ? IconButton(
-                      icon: const Icon(
-                        Icons.clear_rounded,
-                        size: 19,
-                      ),
-                      tooltip: 'Clear input',
-                      onPressed: () => controller.clearInput(),
-                    )
-                  : null,
-            ),
-          ),
-          const SizedBox(height: 8),
+          // Dynamic Type-Specific Form
+          QrDynamicForm(controller: controller),
+          const SizedBox(height: 10),
 
-          // Helper or Validation Error Text
+          // Helper Note or Validation Error
           if (hasError)
             Padding(
               padding: const EdgeInsets.only(left: 4, bottom: 4),
@@ -250,37 +138,19 @@ class QrInputCard extends StatelessWidget {
             ),
           const SizedBox(height: 16),
 
-          // Action Buttons: Generate & Clear
-          Row(
-            children: [
-              if (hasText)
-                Padding(
-                  padding: const EdgeInsets.only(right: 10),
-                  child: OutlinedButton.icon(
-                    onPressed: () => controller.clearInput(),
-                    icon: const Icon(Icons.refresh_rounded, size: 16),
-                    label: const Text('Clear'),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 14),
-                    ),
-                  ),
-                ),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    FocusScope.of(context).unfocus();
-                    controller.generateQr();
-                  },
-                  icon: const Icon(Icons.qr_code_2_rounded, size: 20),
-                  label: Text(
-                    controller.isQrGenerated
-                        ? 'Update QR Code'
-                        : 'Generate QR Code',
-                  ),
-                ),
+          // Generate / Update Action Button
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                FocusScope.of(context).unfocus();
+                controller.generateQr();
+              },
+              icon: const Icon(Icons.qr_code_2_rounded, size: 20),
+              label: Text(
+                controller.isQrGenerated ? 'Update QR Code' : 'Generate QR Code',
               ),
-            ],
+            ),
           ),
         ],
       ),

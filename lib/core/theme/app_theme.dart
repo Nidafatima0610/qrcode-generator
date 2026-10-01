@@ -28,15 +28,45 @@ class AppTheme {
   static const Color warningColor = Color(0xFFF59E0B);
 
   // QR Color Palette Options for user customization
-  static const List<Color> qrColorOptions = [
-    Color(0xFF0F172A), // Slate 900 (Classic Dark)
+  static const List<Color> qrForegroundColors = [
+    Color(0xFF0F172A), // Classic Slate
     Color(0xFF4F46E5), // Indigo
-    Color(0xFF0284C7), // Ocean Sky
+    Color(0xFF0284C7), // Sky Blue
     Color(0xFF059669), // Emerald
     Color(0xFFDC2626), // Crimson
     Color(0xFF7C3AED), // Violet
     Color(0xFFD97706), // Amber
+    Color(0xFF0D9488), // Teal
+    Color(0xFF78350F), // Espresso
+    Color(0xFF1E1B4B), // Midnight
   ];
+
+  static const List<Color> qrBackgroundColors = [
+    Color(0xFFFFFFFF), // Pure White
+    Color(0xFFF8FAFC), // Soft Slate
+    Color(0xFFFFFBEB), // Warm Ivory
+    Color(0xFFF0F9FF), // Ice Blue
+    Color(0xFFECFDF5), // Soft Mint
+    Color(0xFFFAF5FF), // Soft Lavender
+  ];
+
+  // Alias for backward compatibility
+  static const List<Color> qrColorOptions = qrForegroundColors;
+
+  /// Calculates WCAG luminance contrast ratio between foreground and background.
+  /// Standard minimum recommended contrast for reliable QR scanning is >= 3.0.
+  static double calculateContrastRatio(Color fg, Color bg) {
+    final lum1 = fg.computeLuminance();
+    final lum2 = bg.computeLuminance();
+    final brightest = lum1 > lum2 ? lum1 : lum2;
+    final darkest = lum1 > lum2 ? lum2 : lum1;
+    return (brightest + 0.05) / (darkest + 0.05);
+  }
+
+  /// Returns whether the contrast between two colors is safe for scanning.
+  static bool hasSufficientContrast(Color fg, Color bg) {
+    return calculateContrastRatio(fg, bg) >= 3.0;
+  }
 
   static ThemeData get lightTheme {
     return ThemeData(

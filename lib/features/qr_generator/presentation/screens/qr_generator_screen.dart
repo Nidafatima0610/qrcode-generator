@@ -4,10 +4,17 @@ import 'package:qr_code_generator/features/qr_generator/controllers/qr_generator
 import 'package:qr_code_generator/features/qr_generator/presentation/widgets/qr_display_card.dart';
 import 'package:qr_code_generator/features/qr_generator/presentation/widgets/qr_empty_state.dart';
 import 'package:qr_code_generator/features/qr_generator/presentation/widgets/qr_input_card.dart';
+import 'package:qr_code_generator/features/qr_generator/presentation/widgets/quick_actions_bar.dart';
+import 'package:qr_code_generator/features/qr_generator/presentation/widgets/quick_templates_bar.dart';
+import 'package:qr_code_generator/features/qr_history/models/qr_item.dart';
+import 'package:qr_code_generator/features/qr_history/presentation/screens/qr_history_screen.dart';
+import 'package:qr_code_generator/features/qr_scanner/presentation/screens/qr_scanner_screen.dart';
 
 /// Main screen of the QR Code Generator application.
 class QrGeneratorScreen extends StatefulWidget {
-  const QrGeneratorScreen({super.key});
+  final void Function(int targetTab, {int historyTab})? onNavigateTab;
+
+  const QrGeneratorScreen({super.key, this.onNavigateTab});
 
   @override
   State<QrGeneratorScreen> createState() => _QrGeneratorScreenState();
@@ -15,6 +22,7 @@ class QrGeneratorScreen extends StatefulWidget {
 
 class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
   late final QrGeneratorController _controller;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -24,6 +32,7 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
 
   @override
   void dispose() {
+    _scrollController.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -134,6 +143,53 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
     );
   }
 
+  Future<void> _openHistory({int initialTabIndex = 0}) async {
+    final selectedItem = await Navigator.of(context).push<QrItem>(
+      MaterialPageRoute(
+        builder: (_) => QrHistoryScreen(initialTabIndex: initialTabIndex),
+      ),
+    );
+
+    if (selectedItem != null && mounted) {
+      _controller.loadFromItem(selectedItem);
+    }
+  }
+
+  void _handleQuickAction(int actionIndex) {
+    switch (actionIndex) {
+      case 0: // Create QR
+        _scrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+        );
+        break;
+      case 1: // Scan QR
+        if (widget.onNavigateTab != null) {
+          widget.onNavigateTab!(1);
+        } else {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const QrScannerScreen()),
+          );
+        }
+        break;
+      case 2: // History
+        if (widget.onNavigateTab != null) {
+          widget.onNavigateTab!(2, historyTab: 0);
+        } else {
+          _openHistory(initialTabIndex: 0);
+        }
+        break;
+      case 3: // Favorites
+        if (widget.onNavigateTab != null) {
+          widget.onNavigateTab!(2, historyTab: 1);
+        } else {
+          _openHistory(initialTabIndex: 1);
+        }
+        break;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -164,6 +220,17 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
             ],
           ),
           actions: [
+            IconButton(
+              icon: const Icon(Icons.favorite_rounded,
+                  color: Color(0xFFE11D48)),
+              tooltip: 'Favorites',
+              onPressed: () => _openHistory(initialTabIndex: 1),
+            ),
+            IconButton(
+              icon: const Icon(Icons.history_rounded),
+              tooltip: 'History',
+              onPressed: () => _openHistory(initialTabIndex: 0),
+            ),
             ListenableBuilder(
               listenable: _controller,
               builder: (context, _) {
@@ -182,7 +249,7 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
               tooltip: 'About app',
               onPressed: () => _showInfoDialog(context),
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 4),
           ],
         ),
         body: SafeArea(
@@ -193,6 +260,7 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
                 listenable: _controller,
                 builder: (context, _) {
                   return SingleChildScrollView(
+                    controller: _scrollController,
                     physics: const BouncingScrollPhysics(),
                     keyboardDismissBehavior:
                         ScrollViewKeyboardDismissBehavior.onDrag,
@@ -205,16 +273,16 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
                       children: [
                         // Subtitle Banner
                         Padding(
-                          padding: const EdgeInsets.only(left: 4, bottom: 16),
+                          padding: const EdgeInsets.only(left: 4, bottom: 14),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
                                 'Create & Export Custom QR Codes',
                                 style: theme.textTheme.headlineSmall?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 20,
-                                  letterSpacing: -0.4,
+                                   fontWeight: FontWeight.w800,
+                                   fontSize: 20,
+                                   letterSpacing: -0.4,
                                 ),
                               ),
                               const SizedBox(height: 4),
@@ -232,7 +300,23 @@ class _QrGeneratorScreenState extends State<QrGeneratorScreen> {
                           ),
                         ),
 
-                        // Input Card
+                        // 1. Recent Quick Actions Bar
+                        QuickActionsBar(
+                          onCreateTap: () => _handleQuickAction(0),
+                          onScanTap: () => _handleQuickAction(1),
+                          onHistoryTap: () => _handleQuickAction(2),
+                          onFavoritesTap: () => _handleQuickAction(3),
+                        ),
+
+                        // 2. Quick Templates Bar
+                        QuickTemplatesBar(
+                          activeType: _controller.payloadType,
+                          onSelectTemplate: (type) {
+                            _controller.setPayloadType(type);
+                          },
+                        ),
+
+                        // 3. Dynamic Input Card
                         QrInputCard(controller: _controller),
                         const SizedBox(height: 20),
 
