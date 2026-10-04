@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:qrcode_generator/core/constants/app_theme.dart';
 import 'package:qrcode_generator/core/services/storage_service.dart';
 import 'package:qrcode_generator/presentation/screens/main_shell_screen.dart';
+import 'package:qrcode_generator/presentation/screens/onboarding/onboarding_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -39,7 +40,12 @@ class QrApp extends StatelessWidget {
           theme: AppTheme.lightTheme,
           darkTheme: AppTheme.darkTheme,
           themeMode: storageService.themeMode,
-          home: MainShellScreen(storageService: storageService),
+          home: storageService.hasCompletedOnboarding
+              ? MainShellScreen(storageService: storageService)
+              : OnboardingScreen(
+                  storageService: storageService,
+                  onFinish: () {},
+                ),
         );
       },
     );

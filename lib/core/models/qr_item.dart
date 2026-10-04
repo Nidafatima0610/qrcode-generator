@@ -11,6 +11,7 @@ class QrItem {
   final DateTime createdAt;
   final QrCustomization customization;
   final bool isFavorite;
+  final Map<String, dynamic>? formData;
 
   const QrItem({
     required this.id,
@@ -21,6 +22,7 @@ class QrItem {
     required this.createdAt,
     this.customization = const QrCustomization(),
     this.isFavorite = false,
+    this.formData,
   });
 
   QrItem copyWith({
@@ -32,6 +34,7 @@ class QrItem {
     DateTime? createdAt,
     QrCustomization? customization,
     bool? isFavorite,
+    Map<String, dynamic>? formData,
   }) {
     return QrItem(
       id: id ?? this.id,
@@ -42,6 +45,7 @@ class QrItem {
       createdAt: createdAt ?? this.createdAt,
       customization: customization ?? this.customization,
       isFavorite: isFavorite ?? this.isFavorite,
+      formData: formData ?? this.formData,
     );
   }
 
@@ -55,6 +59,7 @@ class QrItem {
       'createdAt': createdAt.toIso8601String(),
       'customization': customization.toMap(),
       'isFavorite': isFavorite,
+      if (formData != null) 'formData': formData,
     };
   }
 
@@ -72,6 +77,9 @@ class QrItem {
           ? QrCustomization.fromMap(map['customization'] as Map<String, dynamic>)
           : const QrCustomization(),
       isFavorite: map['isFavorite'] as bool? ?? false,
+      formData: map['formData'] != null
+          ? Map<String, dynamic>.from(map['formData'] as Map)
+          : null,
     );
   }
 

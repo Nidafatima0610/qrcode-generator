@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:uuid/uuid.dart';
 import 'package:qrcode_generator/core/constants/app_colors.dart';
+import 'package:qrcode_generator/core/models/qr_item.dart';
 import 'package:qrcode_generator/core/models/qr_type.dart';
 import 'package:qrcode_generator/core/services/storage_service.dart';
 import 'package:qrcode_generator/presentation/widgets/qr_card.dart';
@@ -8,6 +10,9 @@ import 'package:qrcode_generator/presentation/widgets/empty_state_view.dart';
 import 'package:qrcode_generator/presentation/screens/preview/qr_preview_screen.dart';
 import 'package:qrcode_generator/presentation/screens/scanner/scan_result_screen.dart';
 import 'package:qrcode_generator/presentation/screens/templates/templates_screen.dart';
+import 'package:qrcode_generator/presentation/screens/bulk/bulk_create_screen.dart';
+import 'package:qrcode_generator/presentation/screens/presets/presets_screen.dart';
+import 'package:qrcode_generator/presentation/screens/create/create_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   final StorageService storageService;
@@ -24,6 +29,49 @@ class HomeScreen extends StatelessWidget {
     required this.onNavigateToTab,
   });
 
+  Future<void> _duplicateItem(BuildContext context, QrItem item) async {
+    final duplicated = item.copyWith(
+      id: const Uuid().v4(),
+      title: '${item.title} (Copy)',
+      createdAt: DateTime.now(),
+    );
+    await storageService.saveItem(duplicated);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Duplicated "${item.title}"'),
+          behavior: SnackBarBehavior.floating,
+          action: SnackBarAction(
+            label: 'View',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => QrPreviewScreen(
+                    item: duplicated,
+                    storageService: storageService,
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+    }
+  }
+
+  void _openEdit(BuildContext context, QrItem item) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CreateScreen(
+          storageService: storageService,
+          editingItem: item,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -33,12 +81,14 @@ class HomeScreen extends StatelessWidget {
         child: ListenableBuilder(
           listenable: storageService,
           builder: (context, _) {
-            final recentHistory = storageService.history.take(5).toList();
+            final recentHistory = storageService.history.take(4).toList();
             final recentScans = storageService.scanHistory.take(3).toList();
 
             return CustomScrollView(
               slivers: [
-                // 1. App Bar / Header
+                // ==========================================
+                // 1. TOP: APP IDENTITY & QUICK ACTIONS
+                // ==========================================
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
@@ -53,7 +103,7 @@ class HomeScreen extends StatelessWidget {
                                 gradient: const LinearGradient(
                                   colors: [
                                     AppColors.primary,
-                                    AppColors.secondary
+                                    AppColors.secondary,
                                   ],
                                   begin: Alignment.topLeft,
                                   end: Alignment.bottomRight,
@@ -108,47 +158,10 @@ class HomeScreen extends StatelessWidget {
                   ),
                 ),
 
-                // 2. Real Statistics Dashboard (Requirement 13)
+                // Top: Hero Quick Action Cards (Create QR & Scan QR)
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 6),
-                    child: Row(
-                      children: [
-                        _buildStatCard(
-                          context: context,
-                          label: 'Generated',
-                          value: '${storageService.totalGenerated}',
-                          icon: Icons.qr_code_rounded,
-                          color: AppColors.primary,
-                          onTap: () => onNavigateToTab(2, null, 0),
-                        ),
-                        const SizedBox(width: 10),
-                        _buildStatCard(
-                          context: context,
-                          label: 'Total Scans',
-                          value: '${storageService.totalScans}',
-                          icon: Icons.camera_alt_rounded,
-                          color: AppColors.secondary,
-                          onTap: () => onNavigateToTab(2, null, 2),
-                        ),
-                        const SizedBox(width: 10),
-                        _buildStatCard(
-                          context: context,
-                          label: 'Favorites',
-                          value: '${storageService.totalFavorites}',
-                          icon: Icons.favorite_rounded,
-                          color: AppColors.error,
-                          onTap: () => onNavigateToTab(2, null, 1),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                // 3. Hero Quick Action Cards (Create QR & Scan QR)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 10),
                     child: Row(
                       children: [
                         // Generate QR Card
@@ -157,7 +170,7 @@ class HomeScreen extends StatelessWidget {
                             borderRadius: BorderRadius.circular(18),
                             onTap: () => onNavigateToTab(1), // Create tab
                             child: Container(
-                              height: 122,
+                              height: 114,
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
                                 gradient: const LinearGradient(
@@ -171,8 +184,7 @@ class HomeScreen extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(18),
                                 boxShadow: [
                                   BoxShadow(
-                                    color:
-                                        AppColors.primary.withValues(alpha: 0.3),
+                                    color: AppColors.primary.withValues(alpha: 0.3),
                                     blurRadius: 14,
                                     offset: const Offset(0, 6),
                                   ),
@@ -180,30 +192,28 @@ class HomeScreen extends StatelessWidget {
                               ),
                               child: const Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
                                   CircleAvatar(
-                                    radius: 17,
+                                    radius: 16,
                                     backgroundColor: Colors.white24,
                                     child: Icon(Icons.add_rounded,
                                         color: Colors.white, size: 22),
                                   ),
                                   Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         'Create QR',
                                         style: TextStyle(
                                           color: Colors.white,
-                                          fontSize: 15.5,
+                                          fontSize: 15,
                                           fontWeight: FontWeight.w800,
                                         ),
                                       ),
                                       SizedBox(height: 2),
                                       Text(
-                                        '9 custom formats',
+                                        '11 rich formats',
                                         style: TextStyle(
                                           color: Colors.white70,
                                           fontSize: 11,
@@ -224,7 +234,7 @@ class HomeScreen extends StatelessWidget {
                             borderRadius: BorderRadius.circular(18),
                             onTap: () => onNavigateToTab(3), // Scanner tab
                             child: Container(
-                              height: 122,
+                              height: 114,
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
                                 gradient: const LinearGradient(
@@ -238,8 +248,7 @@ class HomeScreen extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(18),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: AppColors.secondary
-                                        .withValues(alpha: 0.3),
+                                    color: AppColors.secondary.withValues(alpha: 0.3),
                                     blurRadius: 14,
                                     offset: const Offset(0, 6),
                                   ),
@@ -247,30 +256,28 @@ class HomeScreen extends StatelessWidget {
                               ),
                               child: const Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
                                   CircleAvatar(
-                                    radius: 17,
+                                    radius: 16,
                                     backgroundColor: Colors.white24,
                                     child: Icon(Icons.camera_alt_rounded,
-                                        color: Colors.white, size: 19),
+                                        color: Colors.white, size: 18),
                                   ),
                                   Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         'Scan QR',
                                         style: TextStyle(
                                           color: Colors.white,
-                                          fontSize: 15.5,
+                                          fontSize: 15,
                                           fontWeight: FontWeight.w800,
                                         ),
                                       ),
                                       SizedBox(height: 2),
                                       Text(
-                                        'Instant camera detection',
+                                        'Camera & Gallery',
                                         style: TextStyle(
                                           color: Colors.white70,
                                           fontSize: 11,
@@ -288,99 +295,83 @@ class HomeScreen extends StatelessWidget {
                   ),
                 ),
 
-                // 4. Templates Feature Card Banner (Requirement 3)
+                // Top: Clean Quick Utilities Row (Bulk Generator, Presets, Templates)
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(16),
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => TemplatesScreen(
-                              onSelectTemplate: (tpl) {
-                                Navigator.pop(context);
-                                onNavigateToTab(
-                                  1,
-                                  tpl.type,
-                                  null,
-                                  tpl.initialValues,
-                                );
-                              },
-                            ),
-                          ),
-                        );
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: isDark
-                              ? AppColors.darkCard
-                              : Colors.purple.shade50.withValues(alpha: 0.6),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: isDark
-                                ? AppColors.darkBorder
-                                : Colors.purple.shade100,
-                          ),
+                    padding: const EdgeInsets.fromLTRB(20, 2, 20, 12),
+                    child: Row(
+                      children: [
+                        _buildQuickToolButton(
+                          context: context,
+                          icon: Icons.dynamic_feed_rounded,
+                          label: 'Bulk QR',
+                          color: Colors.teal,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => BulkCreateScreen(
+                                  storageService: storageService,
+                                ),
+                              ),
+                            );
+                          },
                         ),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: AppColors.accent.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(12),
+                        const SizedBox(width: 8),
+                        _buildQuickToolButton(
+                          context: context,
+                          icon: Icons.tune_rounded,
+                          label: 'Presets',
+                          color: AppColors.accent,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => PresetsScreen(
+                                  storageService: storageService,
+                                ),
                               ),
-                              child: const Icon(
-                                Icons.auto_awesome_rounded,
-                                color: AppColors.accent,
-                                size: 22,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            const Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Ready-Made QR Templates',
-                                    style: TextStyle(
-                                      fontSize: 14.5,
-                                      fontWeight: FontWeight.w700,
-                                      letterSpacing: -0.2,
-                                    ),
-                                  ),
-                                  SizedBox(height: 2),
-                                  Text(
-                                    'Wi-Fi, vCard, Social, Location & Business presets',
-                                    style: TextStyle(
-                                      fontSize: 11.5,
-                                      color: Colors.grey,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const Icon(
-                              Icons.arrow_forward_ios_rounded,
-                              size: 14,
-                              color: AppColors.accent,
-                            ),
-                          ],
+                            );
+                          },
                         ),
-                      ),
+                        const SizedBox(width: 8),
+                        _buildQuickToolButton(
+                          context: context,
+                          icon: Icons.auto_awesome_rounded,
+                          label: 'Templates',
+                          color: Colors.purple,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => TemplatesScreen(
+                                  onSelectTemplate: (tpl) {
+                                    Navigator.pop(context);
+                                    onNavigateToTab(
+                                      1,
+                                      tpl.type,
+                                      null,
+                                      tpl.initialValues,
+                                    );
+                                  },
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
                     ),
                   ),
                 ),
 
-                // 5. Quick Create Actions for ALL 9 Formats (Requirement 14)
+                // ==========================================
+                // 2. MIDDLE: QR TYPE SHORTCUTS & RECENT CONTENT
+                // ==========================================
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
                     child: Text(
-                      'Quick Create Formats',
+                      'QR Type Shortcuts',
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.w700,
                             letterSpacing: -0.2,
@@ -388,9 +379,11 @@ class HomeScreen extends StatelessWidget {
                     ),
                   ),
                 ),
+
+                // Horizontal Carousel of All 11 Formats
                 SliverToBoxAdapter(
                   child: SizedBox(
-                    height: 94,
+                    height: 92,
                     child: ListView.separated(
                       padding: const EdgeInsets.symmetric(horizontal: 20),
                       scrollDirection: Axis.horizontal,
@@ -433,8 +426,10 @@ class HomeScreen extends StatelessWidget {
                                 Text(
                                   type.shortName,
                                   textAlign: TextAlign.center,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
-                                    fontSize: 11.5,
+                                    fontSize: 11,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
@@ -447,16 +442,158 @@ class HomeScreen extends StatelessWidget {
                   ),
                 ),
 
-                // 6. Recent Scans Section (Requirement 13)
+                // Middle: Recent Generated QR Codes Section Header
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Recent Generated Codes',
+                          style:
+                              Theme.of(context).textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: -0.2,
+                                  ),
+                        ),
+                        if (storageService.history.isNotEmpty)
+                          TextButton(
+                            style: TextButton.styleFrom(
+                              padding: EdgeInsets.zero,
+                              minimumSize: const Size(60, 30),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            onPressed: () => onNavigateToTab(2, null, 0),
+                            child: Text(
+                              'View All (${storageService.history.length})',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // Middle: Recent History List or Empty State
+                if (recentHistory.isEmpty)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                      child: EmptyStateView(
+                        icon: Icons.qr_code_2_rounded,
+                        title: 'No QR Codes Generated',
+                        message:
+                            'Select a format above to generate your first custom QR code with color presets, shapes, and export tools!',
+                        buttonText: 'Create QR Code',
+                        onButtonPressed: () => onNavigateToTab(1),
+                      ),
+                    ),
+                  )
+                else
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    sliver: SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final item = recentHistory[index];
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: QrCard(
+                              item: item,
+                              showDelete: false,
+                              onFavoriteToggle: () async {
+                                await storageService.toggleFavorite(item.id);
+                              },
+                              onEdit: () => _openEdit(context, item),
+                              onDuplicate: () => _duplicateItem(context, item),
+                              onRegenerate: () => _openEdit(context, item),
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => QrPreviewScreen(
+                                      item: item,
+                                      storageService: storageService,
+                                      onEdit: () => _openEdit(context, item),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          );
+                        },
+                        childCount: recentHistory.length,
+                      ),
+                    ),
+                  ),
+
+                // ==========================================
+                // 3. BOTTOM: STATISTICS & RECENT ACTIVITY
+                // ==========================================
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 22, 20, 8),
+                    child: Text(
+                      'Overview & Statistics',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.2,
+                          ),
+                    ),
+                  ),
+                ),
+
+                // Real Statistics Dashboard
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 2, 20, 10),
+                    child: Row(
+                      children: [
+                        _buildStatCard(
+                          context: context,
+                          label: 'Generated',
+                          value: '${storageService.totalGenerated}',
+                          icon: Icons.qr_code_rounded,
+                          color: AppColors.primary,
+                          onTap: () => onNavigateToTab(2, null, 0),
+                        ),
+                        const SizedBox(width: 10),
+                        _buildStatCard(
+                          context: context,
+                          label: 'Total Scans',
+                          value: '${storageService.totalScans}',
+                          icon: Icons.camera_alt_rounded,
+                          color: AppColors.secondary,
+                          onTap: () => onNavigateToTab(2, null, 2),
+                        ),
+                        const SizedBox(width: 10),
+                        _buildStatCard(
+                          context: context,
+                          label: 'Favorites',
+                          value: '${storageService.totalFavorites}',
+                          icon: Icons.favorite_rounded,
+                          color: AppColors.error,
+                          onTap: () => onNavigateToTab(2, null, 1),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // Recent Activity / Scans Section
                 if (recentScans.isNotEmpty) ...[
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 22, 20, 8),
+                      padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            'Recent Scans',
+                            'Recent Activity (Scans)',
                             style:
                                 Theme.of(context).textTheme.titleSmall?.copyWith(
                                       fontWeight: FontWeight.w700,
@@ -483,7 +620,7 @@ class HomeScreen extends StatelessWidget {
                     ),
                   ),
                   SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 30),
                     sliver: SliverList(
                       delegate: SliverChildBuilderDelegate(
                         (context, index) {
@@ -551,101 +688,55 @@ class HomeScreen extends StatelessWidget {
                       ),
                     ),
                   ),
+                ] else ...[
+                  const SliverToBoxAdapter(
+                    child: SizedBox(height: 30),
+                  ),
                 ],
-
-                // 7. Recent Generated QR Codes Section (Requirement 13)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 22, 20, 8),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Recent Generated Codes',
-                          style:
-                              Theme.of(context).textTheme.titleSmall?.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: -0.2,
-                                  ),
-                        ),
-                        if (storageService.history.isNotEmpty)
-                          TextButton(
-                            style: TextButton.styleFrom(
-                              padding: EdgeInsets.zero,
-                              minimumSize: const Size(60, 30),
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                            onPressed: () => onNavigateToTab(2, null, 0),
-                            child: Text(
-                              'View All (${storageService.history.length})',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                // 8. Recent History List or Empty State
-                if (recentHistory.isEmpty)
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: EmptyStateView(
-                        icon: Icons.qr_code_2_rounded,
-                        title: 'No QR Codes Generated',
-                        message:
-                            'Select a format above to generate your first custom QR code with color presets, shapes, and export tools!',
-                        buttonText: 'Create QR Code',
-                        onButtonPressed: () => onNavigateToTab(1),
-                      ),
-                    ),
-                  )
-                else
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 30),
-                    sliver: SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final item = recentHistory[index];
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: QrCard(
-                              item: item,
-                              showDelete: false,
-                              onFavoriteToggle: () async {
-                                await storageService.toggleFavorite(item.id);
-                              },
-                              onEdit: () {
-                                onNavigateToTab(1, item.type);
-                              },
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => QrPreviewScreen(
-                                      item: item,
-                                      storageService: storageService,
-                                      onEdit: () {
-                                        onNavigateToTab(1, item.type);
-                                      },
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          );
-                        },
-                        childCount: recentHistory.length,
-                      ),
-                    ),
-                  ),
               ],
             );
           },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickToolButton({
+    required BuildContext context,
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 8),
+          decoration: BoxDecoration(
+            color: isDark ? AppColors.darkCard : Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 16, color: color),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

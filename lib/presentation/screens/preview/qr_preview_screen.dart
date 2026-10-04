@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:uuid/uuid.dart';
 import 'package:qrcode_generator/core/constants/app_colors.dart';
 import 'package:qrcode_generator/core/models/qr_item.dart';
-import 'package:qrcode_generator/core/models/qr_type.dart';
+import 'package:qrcode_generator/core/services/qr_content_actions.dart';
 import 'package:qrcode_generator/core/services/qr_sharing_service.dart';
 import 'package:qrcode_generator/core/services/storage_service.dart';
+import 'package:qrcode_generator/presentation/screens/create/create_screen.dart';
 import 'package:qrcode_generator/presentation/widgets/qr_render_view.dart';
 
 class QrPreviewScreen extends StatefulWidget {
@@ -28,20 +30,25 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
   bool _isSharing = false;
   bool _isSaving = false;
   bool _showRawPayload = false;
+  late QrItem _currentItem;
   late bool _isFavorite;
-  bool _presentationMode = false; // false = QR Only, true = With Info Card (Requirement 8)
+  late QrExportMode _exportMode;
 
   @override
   void initState() {
     super.initState();
+    _currentItem = widget.item;
     // Check current favorite status from storage service
     final storedItem = widget.storageService.history
         .firstWhere((e) => e.id == widget.item.id, orElse: () => widget.item);
     _isFavorite = storedItem.isFavorite;
+
+    // Load default export mode from settings
+    _exportMode = QrExportMode.fromString(widget.storageService.defaultExportMode);
   }
 
   Future<void> _toggleFavorite() async {
-    final newStatus = await widget.storageService.toggleFavorite(widget.item.id);
+    final newStatus = await widget.storageService.toggleFavorite(_currentItem.id);
     setState(() => _isFavorite = newStatus);
 
     if (mounted) {
@@ -49,8 +56,8 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
         SnackBar(
           content: Text(
             newStatus
-                ? 'Added "${widget.item.title}" to Favorites'
-                : 'Removed "${widget.item.title}" from Favorites',
+                ? 'Added "${_currentItem.title}" to Favorites'
+                : 'Removed "${_currentItem.title}" from Favorites',
           ),
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 2),
@@ -66,7 +73,7 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
     try {
       final savedPath = await QrSharingService.saveQrImageToDevice(
         repaintBoundaryKey: _repaintBoundaryKey,
-        title: widget.item.title,
+        title: _currentItem.title,
       );
 
       if (!mounted) return;
@@ -115,8 +122,8 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
     try {
       final success = await QrSharingService.shareQrImage(
         repaintBoundaryKey: _repaintBoundaryKey,
-        title: widget.item.title,
-        additionalText: widget.item.subtitle,
+        title: _currentItem.title,
+        additionalText: _currentItem.subtitle,
       );
 
       if (!success && mounted) {
@@ -137,51 +144,118 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
   void _copyContent() {
     QrSharingService.copyToClipboard(
       context,
-      widget.item.rawPayload,
+      _currentItem.rawPayload,
       message: 'QR content copied to clipboard!',
     );
   }
 
-  void _handleSmartAction() {
-    final payload = widget.item.rawPayload;
-    if (widget.item.type == QrType.url ||
-        widget.item.type == QrType.social ||
-        payload.startsWith('http://') ||
-        payload.startsWith('https://')) {
-      QrSharingService.launchExternalUrl(payload);
-    } else if (widget.item.type == QrType.location ||
-        payload.startsWith('geo:') ||
-        payload.contains('maps.google.com')) {
-      QrSharingService.launchExternalUrl(payload);
-    } else if (widget.item.type == QrType.phone || payload.startsWith('tel:')) {
-      QrSharingService.launchExternalUrl(payload);
-    } else if (widget.item.type == QrType.email || payload.startsWith('mailto:')) {
-      QrSharingService.launchExternalUrl(payload);
-    } else if (widget.item.type == QrType.sms || payload.startsWith('smsto:')) {
-      QrSharingService.launchExternalUrl(payload);
+  Future<void> _duplicateItem() async {
+    final duplicate = _currentItem.copyWith(
+      id: const Uuid().v4(),
+      title: 'Copy of ${_currentItem.title}',
+      createdAt: DateTime.now(),
+      isFavorite: false,
+    );
+    await widget.storageService.saveItem(duplicate);
+    setState(() {
+      _currentItem = duplicate;
+      _isFavorite = false;
+    });
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Duplicated as "${duplicate.title}"'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
+  }
+
+  void _regenerateItem() {
+    setState(() {
+      _currentItem = _currentItem.copyWith(createdAt: DateTime.now());
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('QR code regenerated with updated timestamp'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _editItem() {
+    if (widget.onEdit != null) {
+      Navigator.pop(context);
+      widget.onEdit!();
+    } else {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => CreateScreen(
+            storageService: widget.storageService,
+            initialType: _currentItem.type,
+            editingItem: _currentItem,
+          ),
+        ),
+      );
+    }
+  }
+
+  void _confirmDeleteItem() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete QR Code?'),
+        content: Text('Are you sure you want to delete "${_currentItem.title}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await widget.storageService.deleteItem(_currentItem.id);
+              if (mounted) {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Deleted "${_currentItem.title}"'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final item = widget.item;
+    final item = _currentItem;
     final typeColor = item.type.color;
     final formattedDate =
         DateFormat('MMMM d, y • h:mm a').format(item.createdAt);
 
-    final hasSmartAction = item.type == QrType.url ||
-        item.type == QrType.social ||
-        item.type == QrType.location ||
-        item.type == QrType.phone ||
-        item.type == QrType.email ||
-        item.type == QrType.sms;
+    final contextActions = QrContentActions.getActionsForContent(
+      context: context,
+      rawContent: item.rawPayload,
+    );
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('QR Code Preview'),
+        title: const Text('QR Code Details'),
         actions: [
-          // Favorite Action (Requirement 1)
+          // Favorite
           IconButton(
             icon: Icon(
               _isFavorite
@@ -192,15 +266,81 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
             tooltip: _isFavorite ? 'Remove Favorite' : 'Mark as Favorite',
             onPressed: _toggleFavorite,
           ),
-          IconButton(
-            icon: const Icon(Icons.copy_rounded),
-            tooltip: 'Copy Payload',
-            onPressed: _copyContent,
-          ),
+          // Share
           IconButton(
             icon: const Icon(Icons.share_rounded),
-            tooltip: 'Share Image',
+            tooltip: 'Share QR Image',
             onPressed: _shareQrImage,
+          ),
+          // More popup menu (Duplicate, Regenerate, Edit, Delete)
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert_rounded),
+            onSelected: (val) {
+              if (val == 'edit') {
+                _editItem();
+              } else if (val == 'duplicate') {
+                _duplicateItem();
+              } else if (val == 'regenerate') {
+                _regenerateItem();
+              } else if (val == 'copy') {
+                _copyContent();
+              } else if (val == 'delete') {
+                _confirmDeleteItem();
+              }
+            },
+            itemBuilder: (ctx) => [
+              const PopupMenuItem(
+                value: 'edit',
+                child: Row(
+                  children: [
+                    Icon(Icons.edit_rounded, size: 18),
+                    SizedBox(width: 8),
+                    Text('Edit / Modify'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'duplicate',
+                child: Row(
+                  children: [
+                    Icon(Icons.copy_all_rounded, size: 18),
+                    SizedBox(width: 8),
+                    Text('Duplicate'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'regenerate',
+                child: Row(
+                  children: [
+                    Icon(Icons.refresh_rounded, size: 18),
+                    SizedBox(width: 8),
+                    Text('Regenerate'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'copy',
+                child: Row(
+                  children: [
+                    Icon(Icons.copy_rounded, size: 18),
+                    SizedBox(width: 8),
+                    Text('Copy Content'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'delete',
+                child: Row(
+                  children: [
+                    Icon(Icons.delete_outline_rounded,
+                        size: 18, color: AppColors.error),
+                    SizedBox(width: 8),
+                    Text('Delete', style: TextStyle(color: AppColors.error)),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -210,35 +350,40 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Type Badge
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: typeColor.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: typeColor.withValues(alpha: 0.3),
-                    width: 1,
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(item.type.icon, size: 16, color: typeColor),
-                    const SizedBox(width: 6),
-                    Text(
-                      item.type.label,
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: typeColor,
+              // Type Badge & Date Header
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: typeColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: typeColor.withValues(alpha: 0.3),
+                        width: 1,
                       ),
                     ),
-                  ],
-                ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(item.type.icon, size: 16, color: typeColor),
+                        const SizedBox(width: 6),
+                        Text(
+                          item.type.label,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: typeColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
 
               // Title
               Text(
@@ -255,7 +400,7 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
               Text(
                 'Created $formattedDate',
                 style: TextStyle(
-                  fontSize: 12.5,
+                  fontSize: 12,
                   color: isDark
                       ? AppColors.darkTextSecondary
                       : AppColors.lightTextSecondary,
@@ -263,32 +408,71 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
               ),
               const SizedBox(height: 16),
 
-              // Export Presentation Mode Toggle (Requirement 8)
-              Container(
-                decoration: BoxDecoration(
-                  color: isDark ? AppColors.darkCard : Colors.grey.shade200,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                padding: const EdgeInsets.all(3),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _modeButton(
-                      label: 'QR Only',
-                      icon: Icons.qr_code_2_rounded,
-                      isActive: !_presentationMode,
-                      onTap: () => setState(() => _presentationMode = false),
-                    ),
-                    _modeButton(
-                      label: 'With Info Card',
-                      icon: Icons.badge_outlined,
-                      isActive: _presentationMode,
-                      onTap: () => setState(() => _presentationMode = true),
-                    ),
-                  ],
+              // 4 Export Modes Selector (Requirement: QR Only, QR + Title, QR + Title + Content, Presentation Card)
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: isDark ? AppColors.darkCard : Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: const EdgeInsets.all(3),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: QrExportMode.values.map((mode) {
+                      final isActive = _exportMode == mode;
+                      return InkWell(
+                        borderRadius: BorderRadius.circular(10),
+                        onTap: () => setState(() => _exportMode = mode),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 7),
+                          decoration: BoxDecoration(
+                            color: isActive
+                                ? (isDark ? AppColors.primary : Colors.white)
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(10),
+                            boxShadow: isActive
+                                ? [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(alpha: 0.08),
+                                      blurRadius: 4,
+                                    )
+                                  ]
+                                : null,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                mode.icon,
+                                size: 15,
+                                color: isActive
+                                    ? (isDark ? Colors.white : AppColors.primary)
+                                    : Colors.grey,
+                              ),
+                              const SizedBox(width: 5),
+                              Text(
+                                mode.label,
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight:
+                                      isActive ? FontWeight.w700 : FontWeight.w500,
+                                  color: isActive
+                                      ? (isDark ? Colors.white : AppColors.primary)
+                                      : Colors.grey,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 18),
 
               // Dynamic QR Presentation View (with RepaintBoundary)
               Center(
@@ -297,8 +481,7 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
                   customization: item.customization,
                   size: 240,
                   repaintBoundaryKey: _repaintBoundaryKey,
-                  showContainer: !_presentationMode,
-                  presentationCard: _presentationMode,
+                  exportMode: _exportMode,
                   cardTitle: item.title,
                   cardSubtitle: item.subtitle,
                   cardTypeLabel: item.type.label,
@@ -320,7 +503,7 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
                   ),
                   _infoChip(
                     context,
-                    'Format: ${item.type.shortName}',
+                    'Size: ${item.customization.size.toInt()}px',
                   ),
                   if (item.customization.dataModuleShape != 'square')
                     _infoChip(
@@ -334,12 +517,12 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
                     ),
                 ],
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
 
-              // Primary Export Actions (Save Image & Share Image)
+              // Primary Export Actions (Save & Share)
               Row(
                 children: [
-                  // Save to Device / Gallery Button (Requirement 7)
+                  // Save to Device / Gallery Button
                   Expanded(
                     child: ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
@@ -358,7 +541,7 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
                               ),
                             )
                           : const Icon(Icons.download_rounded, size: 20),
-                      label: Text(_isSaving ? 'Saving...' : 'Save to Device'),
+                      label: Text(_isSaving ? 'Saving...' : 'Save Image'),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -385,41 +568,60 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
               ),
               const SizedBox(height: 12),
 
-              // Smart Direct Action (if applicable)
-              if (hasSmartAction) ...[
-                SizedBox(
-                  width: double.infinity,
-                  height: 46,
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: typeColor,
-                      foregroundColor: Colors.white,
+              // Edit & Duplicate Action Row
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _editItem,
+                      icon: const Icon(Icons.edit_outlined, size: 18),
+                      label: const Text('Edit / Reuse'),
                     ),
-                    onPressed: _handleSmartAction,
-                    icon: Icon(item.type.icon, size: 19),
-                    label: Text(_smartActionLabel(item.type)),
                   ),
-                ),
-                const SizedBox(height: 12),
-              ],
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _duplicateItem,
+                      icon: const Icon(Icons.copy_all_rounded, size: 18),
+                      label: const Text('Duplicate'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
 
-              // Edit / Re-generate Action
-              if (widget.onEdit != null) ...[
-                SizedBox(
-                  width: double.infinity,
-                  child: TextButton.icon(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      widget.onEdit!();
-                    },
-                    icon: const Icon(Icons.edit_note_rounded, size: 20),
-                    label: const Text('Edit / Re-generate Code'),
+              // Content Utilities Row (Call, Email, Maps, Web, Copy, etc.)
+              if (contextActions.isNotEmpty) ...[
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Content Actions',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: isDark
+                          ? AppColors.darkTextSecondary
+                          : AppColors.lightTextSecondary,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: contextActions.map((act) {
+                    return ActionChip(
+                      avatar: Icon(act.icon, size: 16, color: act.color ?? AppColors.primary),
+                      label: Text(act.label),
+                      labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                      onPressed: act.onTap,
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 16),
               ],
 
-              // Content Payload Inspector Card
+              // Content Payload Card (safe scrollable without overflow)
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
@@ -441,7 +643,7 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
                               TextButton(
                                 style: TextButton.styleFrom(
                                   padding: EdgeInsets.zero,
-                                  minimumSize: const Size(60, 28),
+                                  minimumSize: const Size(50, 26),
                                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                 ),
                                 onPressed: _copyContent,
@@ -451,7 +653,7 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
                               TextButton(
                                 style: TextButton.styleFrom(
                                   padding: EdgeInsets.zero,
-                                  minimumSize: const Size(60, 28),
+                                  minimumSize: const Size(60, 26),
                                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                 ),
                                 onPressed: () {
@@ -471,6 +673,7 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
                       const SizedBox(height: 8),
                       Container(
                         width: double.infinity,
+                        constraints: const BoxConstraints(maxHeight: 180),
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           color: isDark
@@ -483,19 +686,21 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
                                 : AppColors.lightBorder,
                           ),
                         ),
-                        child: SelectableText(
-                          _showRawPayload
-                              ? item.rawPayload
-                              : (item.subtitle.isNotEmpty
-                                  ? item.subtitle
-                                  : item.rawPayload),
-                          style: TextStyle(
-                            fontFamily: _showRawPayload ? 'monospace' : null,
-                            fontSize: 13,
-                            height: 1.4,
-                            color: isDark
-                                ? AppColors.darkTextPrimary
-                                : AppColors.lightTextPrimary,
+                        child: SingleChildScrollView(
+                          child: SelectableText(
+                            _showRawPayload
+                                ? item.rawPayload
+                                : (item.subtitle.isNotEmpty
+                                    ? item.subtitle
+                                    : item.rawPayload),
+                            style: TextStyle(
+                              fontFamily: _showRawPayload ? 'monospace' : null,
+                              fontSize: 12.5,
+                              height: 1.4,
+                              color: isDark
+                                  ? AppColors.darkTextPrimary
+                                  : AppColors.lightTextPrimary,
+                            ),
                           ),
                         ),
                       ),
@@ -503,64 +708,9 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 30),
+              const SizedBox(height: 24),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _modeButton({
-    required String label,
-    required IconData icon,
-    required bool isActive,
-    required VoidCallback onTap,
-  }) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(10),
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-        decoration: BoxDecoration(
-          color: isActive
-              ? (isDark ? AppColors.primary : Colors.white)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
-          boxShadow: isActive
-              ? [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
-                    blurRadius: 4,
-                  )
-                ]
-              : null,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 16,
-              color: isActive
-                  ? (isDark ? Colors.white : AppColors.primary)
-                  : Colors.grey,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-                color: isActive
-                    ? (isDark ? Colors.white : AppColors.primary)
-                    : Colors.grey,
-              ),
-            ),
-          ],
         ),
       ),
     );
@@ -590,23 +740,5 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
         ),
       ),
     );
-  }
-
-  String _smartActionLabel(QrType type) {
-    switch (type) {
-      case QrType.url:
-      case QrType.social:
-        return 'Open in Browser';
-      case QrType.location:
-        return 'Open in Google Maps';
-      case QrType.phone:
-        return 'Call Number';
-      case QrType.email:
-        return 'Compose Email';
-      case QrType.sms:
-        return 'Send Text Message';
-      default:
-        return 'Open Link';
-    }
   }
 }

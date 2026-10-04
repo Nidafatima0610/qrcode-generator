@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:uuid/uuid.dart';
 import 'package:qrcode_generator/core/constants/app_colors.dart';
@@ -19,14 +20,17 @@ class ScannerScreen extends StatefulWidget {
   State<ScannerScreen> createState() => _ScannerScreenState();
 }
 
-class _ScannerScreenState extends State<ScannerScreen> {
+class _ScannerScreenState extends State<ScannerScreen>
+    with WidgetsBindingObserver {
   late final MobileScannerController _controller;
   bool _isProcessing = false;
   bool _isTorchOn = false;
+  bool _isCameraActive = true;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _controller = MobileScannerController(
       detectionSpeed: DetectionSpeed.noDuplicates,
       facing: CameraFacing.back,
@@ -35,21 +39,37 @@ class _ScannerScreenState extends State<ScannerScreen> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused) {
+      if (_isCameraActive) {
+        _controller.stop();
+        _isCameraActive = false;
+      }
+    } else if (state == AppLifecycleState.resumed) {
+      if (!_isCameraActive && !_isProcessing) {
+        _controller.start();
+        _isCameraActive = true;
+      }
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _controller.dispose();
     super.dispose();
   }
 
-  void _onDetect(BarcodeCapture capture) async {
+  Future<void> _handleBarcodeValue(String rawValue) async {
     if (_isProcessing) return;
-
-    final List<Barcode> barcodes = capture.barcodes;
-    if (barcodes.isEmpty) return;
-
-    final String? rawValue = barcodes.first.rawValue;
-    if (rawValue == null || rawValue.trim().isEmpty) return;
-
     setState(() => _isProcessing = true);
+
+    try {
+      // Pause camera during result presentation
+      await _controller.stop();
+      _isCameraActive = false;
+    } catch (_) {}
 
     final cleanValue = rawValue.trim();
     final parsed = QrPayloadBuilder.parse(cleanValue);
@@ -77,16 +97,80 @@ class _ScannerScreenState extends State<ScannerScreen> {
           scanItem: scanRecord,
           storageService: widget.storageService,
           onScanAgain: () {
-            // Callback to re-enable scanning
+            // Callback for scan again
           },
         ),
       ),
     );
 
-    // Delay before re-enabling scanning to prevent duplicate scans
-    await Future.delayed(const Duration(milliseconds: 700));
+    // Re-enable camera scanner when returning
     if (mounted) {
-      setState(() => _isProcessing = false);
+      try {
+        await _controller.start();
+        _isCameraActive = true;
+      } catch (_) {}
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (mounted) {
+        setState(() => _isProcessing = false);
+      }
+    }
+  }
+
+  void _onDetect(BarcodeCapture capture) {
+    if (_isProcessing) return;
+
+    final List<Barcode> barcodes = capture.barcodes;
+    if (barcodes.isEmpty) return;
+
+    final String? rawValue = barcodes.first.rawValue;
+    if (rawValue == null || rawValue.trim().isEmpty) return;
+
+    _handleBarcodeValue(rawValue.trim());
+  }
+
+  Future<void> _scanFromGallery() async {
+    try {
+      final picker = ImagePicker();
+      final XFile? image =
+          await picker.pickImage(source: ImageSource.gallery);
+      if (image == null) return;
+
+      setState(() => _isProcessing = true);
+
+      final BarcodeCapture? capture =
+          await _controller.analyzeImage(image.path);
+
+      if (capture != null && capture.barcodes.isNotEmpty) {
+        final first = capture.barcodes.first;
+        if (first.rawValue != null && first.rawValue!.trim().isNotEmpty) {
+          await _handleBarcodeValue(first.rawValue!.trim());
+          return;
+        }
+      }
+
+      if (mounted) {
+        setState(() => _isProcessing = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'No QR code detected in the selected image. Please try a clearer picture.',
+            ),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isProcessing = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to read image ($e)'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
     }
   }
 
@@ -99,6 +183,13 @@ class _ScannerScreenState extends State<ScannerScreen> {
         backgroundColor: Colors.transparent,
         foregroundColor: Colors.white,
         actions: [
+          // Gallery Scan
+          IconButton(
+            icon: const Icon(Icons.photo_library_rounded, color: Colors.white),
+            tooltip: 'Scan from Gallery',
+            onPressed: _scanFromGallery,
+          ),
+          // Flashlight Toggle
           IconButton(
             icon: Icon(
               _isTorchOn ? Icons.flash_on_rounded : Icons.flash_off_rounded,
@@ -110,6 +201,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
               setState(() => _isTorchOn = !_isTorchOn);
             },
           ),
+          // Flip Camera
           IconButton(
             icon: const Icon(Icons.flip_camera_ios_rounded, color: Colors.white),
             tooltip: 'Switch Camera',
@@ -165,16 +257,32 @@ class _ScannerScreenState extends State<ScannerScreen> {
                         ),
                       ),
                       const SizedBox(height: 24),
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: Colors.white,
-                        ),
-                        onPressed: () {
-                          _controller.start();
-                        },
-                        icon: const Icon(Icons.refresh_rounded, size: 20),
-                        label: const Text('Retry Camera'),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: Colors.white,
+                            ),
+                            onPressed: () {
+                              _controller.start();
+                              _isCameraActive = true;
+                            },
+                            icon: const Icon(Icons.refresh_rounded, size: 20),
+                            label: const Text('Retry Camera'),
+                          ),
+                          const SizedBox(width: 12),
+                          OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              side: const BorderSide(color: Colors.white54),
+                            ),
+                            onPressed: _scanFromGallery,
+                            icon: const Icon(Icons.photo_library_rounded, size: 18),
+                            label: const Text('Pick Image'),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -186,44 +294,64 @@ class _ScannerScreenState extends State<ScannerScreen> {
           // 2. Reticle Overlay
           _buildReticleOverlay(),
 
-          // 3. Status Badge at Bottom
+          // 3. Status Badge & Quick Gallery Action at Bottom
           Positioned(
-            bottom: 40,
+            bottom: 36,
             left: 20,
             right: 20,
-            child: Center(
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.7),
-                  borderRadius: BorderRadius.circular(30),
-                  border: Border.all(color: Colors.white24, width: 1),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      _isProcessing
-                          ? Icons.hourglass_top_rounded
-                          : Icons.center_focus_strong_rounded,
-                      color: _isProcessing ? AppColors.warning : Colors.white,
-                      size: 18,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      _isProcessing
-                          ? 'Processing code...'
-                          : 'Align QR code within frame to scan',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Status pill
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.75),
+                    borderRadius: BorderRadius.circular(30),
+                    border: Border.all(color: Colors.white24, width: 1),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _isProcessing
+                            ? Icons.hourglass_top_rounded
+                            : Icons.center_focus_strong_rounded,
+                        color: _isProcessing ? AppColors.warning : Colors.white,
+                        size: 18,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 8),
+                      Text(
+                        _isProcessing
+                            ? 'Processing QR code...'
+                            : 'Align QR code within frame to scan',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+                const SizedBox(height: 12),
+
+                // Quick Scan from Gallery Button
+                TextButton.icon(
+                  style: TextButton.styleFrom(
+                    backgroundColor: Colors.white.withValues(alpha: 0.15),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                  onPressed: _scanFromGallery,
+                  icon: const Icon(Icons.image_search_rounded, size: 18),
+                  label: const Text('Scan from Gallery Image'),
+                ),
+              ],
             ),
           ),
         ],

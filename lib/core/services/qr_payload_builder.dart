@@ -75,6 +75,75 @@ class QrPayloadBuilder {
     return buffer.toString();
   }
 
+  /// Build payload for Business Card (vCard 3.0 with extended profile)
+  static String buildBusinessCard({
+    required String fullName,
+    required String jobTitle,
+    required String company,
+    required String phone,
+    required String email,
+    required String website,
+    required String address,
+    required String socialUrl,
+  }) {
+    final buffer = StringBuffer();
+    buffer.writeln('BEGIN:VCARD');
+    buffer.writeln('VERSION:3.0');
+    final nameParts = fullName.trim().split(' ');
+    final firstName = nameParts.isNotEmpty ? nameParts.first : '';
+    final lastName = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
+    buffer.writeln('N:$lastName;$firstName;;;');
+    buffer.writeln('FN:${fullName.trim()}');
+    if (jobTitle.trim().isNotEmpty) buffer.writeln('TITLE:${jobTitle.trim()}');
+    if (company.trim().isNotEmpty) buffer.writeln('ORG:${company.trim()}');
+    if (phone.trim().isNotEmpty) buffer.writeln('TEL;TYPE=CELL,VOICE:${phone.trim()}');
+    if (email.trim().isNotEmpty) buffer.writeln('EMAIL;TYPE=INTERNET:${email.trim()}');
+    if (website.trim().isNotEmpty) {
+      buffer.writeln('URL:${buildUrl(website.trim())}');
+    }
+    if (address.trim().isNotEmpty) {
+      buffer.writeln('ADR;TYPE=WORK:;;${address.trim()};;;;');
+    }
+    if (socialUrl.trim().isNotEmpty) {
+      buffer.writeln('X-SOCIALPROFILE:${buildUrl(socialUrl.trim())}');
+    }
+    buffer.write('END:VCARD');
+    return buffer.toString();
+  }
+
+  /// Build payload for Business Information
+  static String buildBusinessInfo({
+    required String businessName,
+    required String phone,
+    required String email,
+    required String website,
+    required String address,
+    required String description,
+    required String businessHours,
+  }) {
+    final buffer = StringBuffer();
+    buffer.writeln('BEGIN:VCARD');
+    buffer.writeln('VERSION:3.0');
+    buffer.writeln('FN:${businessName.trim()}');
+    buffer.writeln('ORG:${businessName.trim()}');
+    if (phone.trim().isNotEmpty) buffer.writeln('TEL;TYPE=WORK,VOICE:${phone.trim()}');
+    if (email.trim().isNotEmpty) buffer.writeln('EMAIL;TYPE=INTERNET:${email.trim()}');
+    if (website.trim().isNotEmpty) {
+      buffer.writeln('URL:${buildUrl(website.trim())}');
+    }
+    if (address.trim().isNotEmpty) {
+      buffer.writeln('ADR;TYPE=WORK:;;${address.trim()};;;;');
+    }
+    final noteParts = <String>[];
+    if (businessHours.trim().isNotEmpty) noteParts.add('Hours: ${businessHours.trim()}');
+    if (description.trim().isNotEmpty) noteParts.add('About: ${description.trim()}');
+    if (noteParts.isNotEmpty) {
+      buffer.writeln('NOTE:${noteParts.join(' | ')}');
+    }
+    buffer.write('END:VCARD');
+    return buffer.toString();
+  }
+
   /// Build payload for Email
   static String buildEmail({
     required String email,
@@ -181,33 +250,57 @@ class QrPayloadBuilder {
       );
     }
 
-    // 2. Contact / vCard
+    // 2. Contact / Business Card / Business Info (vCard)
     if (trimmed.startsWith('BEGIN:VCARD') || trimmed.contains('VERSION:3.0')) {
       final details = <String, String>{};
       final fnMatch = RegExp(r'FN:(.+)', caseSensitive: false).firstMatch(trimmed);
+      final titleMatch = RegExp(r'TITLE:(.+)', caseSensitive: false).firstMatch(trimmed);
       final telMatch = RegExp(r'TEL[^:]*:(.+)', caseSensitive: false).firstMatch(trimmed);
       final emailMatch = RegExp(r'EMAIL[^:]*:(.+)', caseSensitive: false).firstMatch(trimmed);
       final orgMatch = RegExp(r'ORG:(.+)', caseSensitive: false).firstMatch(trimmed);
       final adrMatch = RegExp(r'ADR[^:]*:(.+)', caseSensitive: false).firstMatch(trimmed);
       final urlMatch = RegExp(r'URL:(.+)', caseSensitive: false).firstMatch(trimmed);
+      final socialMatch = RegExp(r'X-SOCIALPROFILE:(.+)', caseSensitive: false).firstMatch(trimmed);
+      final noteMatch = RegExp(r'NOTE:(.+)', caseSensitive: false).firstMatch(trimmed);
 
       final fullName = fnMatch?.group(1)?.trim() ?? 'Contact Card';
       if (fullName.isNotEmpty) details['Name'] = fullName;
+      if (titleMatch != null) details['Job Title'] = titleMatch.group(1)!.trim();
+      if (orgMatch != null) details['Organization'] = orgMatch.group(1)!.trim();
       if (telMatch != null) details['Phone'] = telMatch.group(1)!.trim();
       if (emailMatch != null) details['Email'] = emailMatch.group(1)!.trim();
-      if (orgMatch != null) details['Organization'] = orgMatch.group(1)!.trim();
       if (adrMatch != null) {
         details['Address'] = adrMatch.group(1)!.replaceAll(';', ' ').trim();
       }
       if (urlMatch != null) details['Website'] = urlMatch.group(1)!.trim();
+      if (socialMatch != null) details['Social Profile'] = socialMatch.group(1)!.trim();
+      if (noteMatch != null) details['Notes'] = noteMatch.group(1)!.trim();
 
       final phone = details['Phone'] ?? '';
+      final jobTitle = details['Job Title'] ?? '';
+      final org = details['Organization'] ?? '';
+
+      // Determine detected type conservatively
+      QrType detectedType = QrType.contact;
+      if (noteMatch != null && (noteMatch.group(1)!.contains('Hours:') || noteMatch.group(1)!.contains('About:'))) {
+        detectedType = QrType.businessInfo;
+      } else if (jobTitle.isNotEmpty || socialMatch != null) {
+        detectedType = QrType.businessCard;
+      }
+
+      String subtitle = phone;
+      if (subtitle.isEmpty && jobTitle.isNotEmpty && org.isNotEmpty) {
+        subtitle = '$jobTitle at $org';
+      } else if (subtitle.isEmpty) {
+        subtitle = details['Email'] ?? (org.isNotEmpty ? org : 'vCard Contact');
+      }
+
       return ParsedQrContent(
-        type: QrType.contact,
+        type: detectedType,
         displayTitle: fullName,
-        displaySubtitle: phone.isNotEmpty ? phone : (details['Email'] ?? 'vCard Contact'),
+        displaySubtitle: subtitle,
         rawPayload: trimmed,
-        actionUrl: phone.isNotEmpty ? 'tel:$phone' : null,
+        actionUrl: phone.isNotEmpty ? 'tel:$phone' : (details['Website'] != null ? buildUrl(details['Website']!) : null),
         details: details,
       );
     }

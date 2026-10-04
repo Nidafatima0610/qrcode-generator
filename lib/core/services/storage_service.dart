@@ -1,16 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:qrcode_generator/core/models/qr_customization.dart';
 import 'package:qrcode_generator/core/models/qr_item.dart';
+import 'package:qrcode_generator/core/models/qr_preset.dart';
+import 'package:qrcode_generator/core/models/qr_type.dart';
 import 'package:qrcode_generator/core/models/scan_item.dart';
 
 class StorageService extends ChangeNotifier {
   static const String _historyKey = 'qr_history_v1';
   static const String _scanHistoryKey = 'qr_scan_history_v1';
+  static const String _presetsKey = 'qr_presets_v1';
   static const String _themeKey = 'app_theme_mode_v1';
+  static const String _onboardingKey = 'qr_onboarding_completed_v1';
+  static const String _defaultQrSizeKey = 'pref_default_qr_size';
+  static const String _defaultEccKey = 'pref_default_ecc';
+  static const String _defaultExportModeKey = 'pref_default_export_mode';
 
   final SharedPreferences _prefs;
   List<QrItem> _history = [];
   List<ScanItem> _scanHistory = [];
+  List<QrPreset> _presets = [];
   ThemeMode _themeMode = ThemeMode.system;
   bool _initialized = false;
 
@@ -26,8 +35,40 @@ class StorageService extends ChangeNotifier {
   bool get isInitialized => _initialized;
   List<QrItem> get history => List.unmodifiable(_history);
   List<ScanItem> get scanHistory => List.unmodifiable(_scanHistory);
+  List<QrPreset> get presets => List.unmodifiable(_presets);
   List<QrItem> get favorites => _history.where((e) => e.isFavorite).toList();
   ThemeMode get themeMode => _themeMode;
+
+  // Onboarding
+  bool get hasCompletedOnboarding =>
+      _prefs.getBool(_onboardingKey) ?? false;
+
+  Future<void> completeOnboarding() async {
+    await _prefs.setBool(_onboardingKey, true);
+    notifyListeners();
+  }
+
+  // Preferences
+  double get defaultQrSize => _prefs.getDouble(_defaultQrSizeKey) ?? 240.0;
+  String get defaultErrorCorrection =>
+      _prefs.getString(_defaultEccKey) ?? 'M';
+  String get defaultExportMode =>
+      _prefs.getString(_defaultExportModeKey) ?? 'card';
+
+  Future<void> setDefaultQrSize(double val) async {
+    await _prefs.setDouble(_defaultQrSizeKey, val);
+    notifyListeners();
+  }
+
+  Future<void> setDefaultErrorCorrection(String val) async {
+    await _prefs.setString(_defaultEccKey, val);
+    notifyListeners();
+  }
+
+  Future<void> setDefaultExportMode(String val) async {
+    await _prefs.setString(_defaultExportModeKey, val);
+    notifyListeners();
+  }
 
   // Real data statistics
   int get totalGenerated => _history.length;
@@ -69,7 +110,78 @@ class StorageService extends ChangeNotifier {
       _scanHistory = [];
     }
 
-    // 3. Load Theme
+    // 3. Load Presets
+    final rawPresets = _prefs.getStringList(_presetsKey);
+    if (rawPresets != null) {
+      _presets = rawPresets
+          .map((itemStr) {
+            try {
+              return QrPreset.fromJson(itemStr);
+            } catch (e) {
+              return null;
+            }
+          })
+          .whereType<QrPreset>()
+          .toList();
+    } else {
+      // Seed default presets if none exist yet
+      _presets = [
+        QrPreset(
+          id: 'preset_biz_card_default',
+          name: 'Business Card Style',
+          type: QrType.businessCard,
+          defaultTitle: 'My Business Card',
+          customization: const QrCustomization(
+            foregroundColor: Color(0xFF0F172A),
+            backgroundColor: Color(0xFFF8FAFC),
+            dataModuleShape: 'circle',
+            eyeShape: 'rounded',
+            errorCorrectionLevel: 'H',
+          ),
+          createdAt: DateTime.now(),
+        ),
+        QrPreset(
+          id: 'preset_wifi_home_default',
+          name: 'Wi-Fi Home',
+          type: QrType.wifi,
+          defaultTitle: 'Home Wi-Fi Network',
+          customization: const QrCustomization(
+            foregroundColor: Color(0xFF064E3B),
+            backgroundColor: Color(0xFFECFDF5),
+            errorCorrectionLevel: 'M',
+          ),
+          createdAt: DateTime.now(),
+        ),
+        QrPreset(
+          id: 'preset_dark_website_default',
+          name: 'Website Dark',
+          type: QrType.url,
+          defaultTitle: 'Company Site',
+          customization: const QrCustomization(
+            foregroundColor: Color(0xFFFFFFFF),
+            backgroundColor: Color(0xFF0F172A),
+            errorCorrectionLevel: 'Q',
+          ),
+          createdAt: DateTime.now(),
+        ),
+        QrPreset(
+          id: 'preset_contact_qr_default',
+          name: 'Contact QR',
+          type: QrType.contact,
+          defaultTitle: 'Personal Contact',
+          customization: const QrCustomization(
+            foregroundColor: Color(0xFF4C1D95),
+            backgroundColor: Color(0xFFF5F3FF),
+            eyeShape: 'rounded',
+            errorCorrectionLevel: 'M',
+          ),
+          createdAt: DateTime.now(),
+        ),
+      ];
+      _persistPresets();
+    }
+
+    // 4. Load Theme
     final themeStr = _prefs.getString(_themeKey);
     if (themeStr == 'light') {
       _themeMode = ThemeMode.light;
@@ -92,9 +204,28 @@ class StorageService extends ChangeNotifier {
       _history.insert(0, item);
     }
 
-    // Keep up to 300 items
-    if (_history.length > 300) {
-      _history = _history.sublist(0, 300);
+    // Keep up to 500 items
+    if (_history.length > 500) {
+      _history = _history.sublist(0, 500);
+    }
+
+    await _persistHistory();
+    notifyListeners();
+  }
+
+  /// Save multiple items in bulk (for Bulk QR generation)
+  Future<void> saveMultipleItems(List<QrItem> items) async {
+    for (final item in items.reversed) {
+      final index = _history.indexWhere((e) => e.id == item.id);
+      if (index >= 0) {
+        _history[index] = item;
+      } else {
+        _history.insert(0, item);
+      }
+    }
+
+    if (_history.length > 500) {
+      _history = _history.sublist(0, 500);
     }
 
     await _persistHistory();
@@ -113,6 +244,29 @@ class StorageService extends ChangeNotifier {
       return updated.isFavorite;
     }
     return false;
+  }
+
+  /// Bulk toggle favorites
+  Future<void> toggleFavoritesBulk(List<String> ids, bool isFavorite) async {
+    final idSet = ids.toSet();
+    for (int i = 0; i < _history.length; i++) {
+      if (idSet.contains(_history[i].id)) {
+        _history[i] = _history[i].copyWith(isFavorite: isFavorite);
+      }
+    }
+    await _persistHistory();
+    notifyListeners();
+  }
+
+  /// Unfavorite all items (keeps items in history safely)
+  Future<void> clearFavorites() async {
+    for (int i = 0; i < _history.length; i++) {
+      if (_history[i].isFavorite) {
+        _history[i] = _history[i].copyWith(isFavorite: false);
+      }
+    }
+    await _persistHistory();
+    notifyListeners();
   }
 
   /// Delete an individual item from history
@@ -141,6 +295,37 @@ class StorageService extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ================= PRESETS METHODS =================
+
+  /// Save or update a preset
+  Future<void> savePreset(QrPreset preset) async {
+    final index = _presets.indexWhere((e) => e.id == preset.id);
+    if (index >= 0) {
+      _presets[index] = preset;
+    } else {
+      _presets.insert(0, preset);
+    }
+    await _persistPresets();
+    notifyListeners();
+  }
+
+  /// Delete a preset
+  Future<void> deletePreset(String id) async {
+    _presets.removeWhere((e) => e.id == id);
+    await _persistPresets();
+    notifyListeners();
+  }
+
+  /// Rename a preset
+  Future<void> renamePreset(String id, String newName) async {
+    final index = _presets.indexWhere((e) => e.id == id);
+    if (index >= 0) {
+      _presets[index] = _presets[index].copyWith(name: newName);
+      await _persistPresets();
+      notifyListeners();
+    }
+  }
+
   // ================= SCAN HISTORY METHODS =================
 
   /// Save or update a scanned QR item
@@ -152,8 +337,8 @@ class StorageService extends ChangeNotifier {
     }
     _scanHistory.insert(0, item);
 
-    if (_scanHistory.length > 300) {
-      _scanHistory = _scanHistory.sublist(0, 300);
+    if (_scanHistory.length > 500) {
+      _scanHistory = _scanHistory.sublist(0, 500);
     }
 
     await _persistScanHistory();
@@ -196,5 +381,10 @@ class StorageService extends ChangeNotifier {
   Future<void> _persistScanHistory() async {
     final strList = _scanHistory.map((e) => e.toJson()).toList();
     await _prefs.setStringList(_scanHistoryKey, strList);
+  }
+
+  Future<void> _persistPresets() async {
+    final strList = _presets.map((e) => e.toJson()).toList();
+    await _prefs.setStringList(_presetsKey, strList);
   }
 }

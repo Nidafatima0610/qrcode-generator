@@ -1,15 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:uuid/uuid.dart';
 import 'package:qrcode_generator/core/constants/app_colors.dart';
 import 'package:qrcode_generator/core/models/qr_item.dart';
 import 'package:qrcode_generator/core/models/qr_type.dart';
 import 'package:qrcode_generator/core/models/scan_item.dart';
-import 'package:qrcode_generator/core/services/qr_sharing_service.dart';
 import 'package:qrcode_generator/core/services/storage_service.dart';
-import 'package:qrcode_generator/presentation/widgets/qr_card.dart';
-import 'package:qrcode_generator/presentation/widgets/empty_state_view.dart';
+import 'package:qrcode_generator/presentation/screens/create/create_screen.dart';
 import 'package:qrcode_generator/presentation/screens/preview/qr_preview_screen.dart';
 import 'package:qrcode_generator/presentation/screens/scanner/scan_result_screen.dart';
+import 'package:qrcode_generator/presentation/widgets/empty_state_view.dart';
+import 'package:qrcode_generator/presentation/widgets/qr_card.dart';
 
 enum HistorySortOption {
   newest,
@@ -156,7 +157,8 @@ class HistoryScreenState extends State<HistoryScreen>
             ),
             onPressed: () async {
               Navigator.pop(dialogCtx);
-              await widget.storageService.deleteMultiple(_selectedItemIds.toList());
+              await widget.storageService
+                  .deleteMultiple(_selectedItemIds.toList());
               setState(() {
                 _isSelectionMode = false;
                 _selectedItemIds.clear();
@@ -306,19 +308,47 @@ class HistoryScreenState extends State<HistoryScreen>
         filtered.sort((a, b) => a.createdAt.compareTo(b.createdAt));
         break;
       case HistorySortOption.alphabetical:
-        filtered.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+        filtered.sort(
+            (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
         break;
     }
 
     return filtered;
   }
 
+  Map<String, List<QrItem>> _groupByDate(List<QrItem> items) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+
+    final Map<String, List<QrItem>> groups = {
+      'Today': [],
+      'Yesterday': [],
+      'Earlier': [],
+    };
+
+    for (final item in items) {
+      final itemDate = DateTime(
+          item.createdAt.year, item.createdAt.month, item.createdAt.day);
+      if (itemDate.isAtSameMomentAs(today) || itemDate.isAfter(today)) {
+        groups['Today']!.add(item);
+      } else if (itemDate.isAtSameMomentAs(yesterday)) {
+        groups['Yesterday']!.add(item);
+      } else {
+        groups['Earlier']!.add(item);
+      }
+    }
+
+    groups.removeWhere((key, list) => list.isEmpty);
+    return groups;
+  }
+
   List<ScanItem> _filterScanItems(List<ScanItem> items) {
     final query = _searchController.text.trim().toLowerCase();
 
     return items.where((item) {
-      final matchesType =
-          _selectedFilterType == null || item.detectedType == _selectedFilterType;
+      final matchesType = _selectedFilterType == null ||
+          item.detectedType == _selectedFilterType;
       final matchesSearch = query.isEmpty ||
           item.title.toLowerCase().contains(query) ||
           item.subtitle.toLowerCase().contains(query) ||
@@ -326,6 +356,50 @@ class HistoryScreenState extends State<HistoryScreen>
           item.detectedType.label.toLowerCase().contains(query);
       return matchesType && matchesSearch;
     }).toList();
+  }
+
+  void _duplicateItem(QrItem item) async {
+    final duplicate = item.copyWith(
+      id: const Uuid().v4(),
+      title: 'Copy of ${item.title}',
+      createdAt: DateTime.now(),
+      isFavorite: false,
+    );
+    await widget.storageService.saveItem(duplicate);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Duplicated "${duplicate.title}"'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  void _regenerateItem(QrItem item) async {
+    final updated = item.copyWith(createdAt: DateTime.now());
+    await widget.storageService.saveItem(updated);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('QR timestamp regenerated!'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  void _editItem(QrItem item) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CreateScreen(
+          storageService: widget.storageService,
+          initialType: item.type,
+          editingItem: item,
+        ),
+      ),
+    );
   }
 
   @override
@@ -338,6 +412,9 @@ class HistoryScreenState extends State<HistoryScreen>
         final generatedItems = widget.storageService.history;
         final favoriteItems = widget.storageService.favorites;
         final scanItems = widget.storageService.scanHistory;
+
+        final isFavTab = _tabController.index == 1;
+        final currentActiveItems = isFavTab ? favoriteItems : generatedItems;
 
         return Scaffold(
           appBar: AppBar(
@@ -359,25 +436,79 @@ class HistoryScreenState extends State<HistoryScreen>
               if (_isSelectionMode) ...[
                 // Select All / Deselect All
                 IconButton(
-                  icon: Icon(_selectedItemIds.length == generatedItems.length
+                  icon: Icon(_selectedItemIds.length == currentActiveItems.length
                       ? Icons.deselect_rounded
                       : Icons.select_all_rounded),
-                  tooltip: _selectedItemIds.length == generatedItems.length
-                      ? 'Deselect All'
-                      : 'Select All',
+                  tooltip:
+                      _selectedItemIds.length == currentActiveItems.length
+                          ? 'Deselect All'
+                          : 'Select All',
                   onPressed: () {
                     setState(() {
-                      if (_selectedItemIds.length == generatedItems.length) {
+                      if (_selectedItemIds.length ==
+                          currentActiveItems.length) {
                         _selectedItemIds.clear();
                       } else {
-                        _selectedItemIds.addAll(generatedItems.map((e) => e.id));
+                        _selectedItemIds.addAll(
+                            currentActiveItems.map((e) => e.id));
                       }
                     });
                   },
                 ),
+                // Favorite / Unfavorite selected
+                if (!isFavTab)
+                  IconButton(
+                    icon: const Icon(Icons.favorite_rounded,
+                        color: AppColors.error),
+                    tooltip: 'Favorite Selected',
+                    onPressed: _selectedItemIds.isEmpty
+                        ? null
+                        : () async {
+                            await widget.storageService.toggleFavoritesBulk(
+                                _selectedItemIds.toList(), true);
+                            setState(() {
+                              _isSelectionMode = false;
+                              _selectedItemIds.clear();
+                            });
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Marked selected as favorites'),
+                                  behavior: SnackBarBehavior.floating,
+                                ),
+                              );
+                            }
+                          },
+                  )
+                else
+                  IconButton(
+                    icon: const Icon(Icons.favorite_border_rounded,
+                        color: Colors.amber),
+                    tooltip: 'Unfavorite Selected',
+                    onPressed: _selectedItemIds.isEmpty
+                        ? null
+                        : () async {
+                            await widget.storageService.toggleFavoritesBulk(
+                                _selectedItemIds.toList(), false);
+                            setState(() {
+                              _isSelectionMode = false;
+                              _selectedItemIds.clear();
+                            });
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                      'Removed from favorites (kept in history)'),
+                                  behavior: SnackBarBehavior.floating,
+                                ),
+                              );
+                            }
+                          },
+                  ),
                 // Delete selected
                 IconButton(
-                  icon: const Icon(Icons.delete_rounded, color: AppColors.error),
+                  icon:
+                      const Icon(Icons.delete_rounded, color: AppColors.error),
                   tooltip: 'Delete Selected',
                   onPressed: _selectedItemIds.isEmpty
                       ? null
@@ -389,7 +520,8 @@ class HistoryScreenState extends State<HistoryScreen>
                   icon: const Icon(Icons.sort_rounded),
                   tooltip: 'Sort List',
                   onSelected: (val) => setState(() => _currentSort = val),
-                  itemBuilder: (context) => HistorySortOption.values.map((opt) {
+                  itemBuilder: (context) =>
+                      HistorySortOption.values.map((opt) {
                     return PopupMenuItem(
                       value: opt,
                       child: Row(
@@ -399,7 +531,8 @@ class HistoryScreenState extends State<HistoryScreen>
                                 ? Icons.radio_button_checked_rounded
                                 : Icons.radio_button_unchecked_rounded,
                             size: 18,
-                            color: _currentSort == opt ? AppColors.primary : null,
+                            color:
+                                _currentSort == opt ? AppColors.primary : null,
                           ),
                           const SizedBox(width: 8),
                           Text(opt.label),
@@ -409,8 +542,9 @@ class HistoryScreenState extends State<HistoryScreen>
                   }).toList(),
                 ),
 
-                // Multi-select toggle button (for Generated tab)
-                if (_tabController.index == 0 && generatedItems.isNotEmpty)
+                // Multi-select toggle button (for Generated and Favorites tabs)
+                if (_tabController.index != 2 &&
+                    currentActiveItems.isNotEmpty)
                   IconButton(
                     icon: const Icon(Icons.checklist_rounded),
                     tooltip: 'Select Multiple',
@@ -448,16 +582,34 @@ class HistoryScreenState extends State<HistoryScreen>
                   : AppColors.lightTextSecondary,
               tabs: [
                 Tab(
-                  text: 'Generated (${generatedItems.length})',
-                  icon: const Icon(Icons.qr_code_2_rounded, size: 20),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.qr_code_2_rounded, size: 18),
+                      const SizedBox(width: 6),
+                      Text('Generated (${generatedItems.length})'),
+                    ],
+                  ),
                 ),
                 Tab(
-                  text: 'Favorites (${favoriteItems.length})',
-                  icon: const Icon(Icons.favorite_rounded, size: 20),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.favorite_rounded, size: 16),
+                      const SizedBox(width: 6),
+                      Text('Favorites (${favoriteItems.length})'),
+                    ],
+                  ),
                 ),
                 Tab(
-                  text: 'Scans (${scanItems.length})',
-                  icon: const Icon(Icons.camera_alt_rounded, size: 20),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.qr_code_scanner_rounded, size: 18),
+                      const SizedBox(width: 6),
+                      Text('Scans (${scanItems.length})'),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -466,12 +618,14 @@ class HistoryScreenState extends State<HistoryScreen>
             children: [
               // 1. Search Bar
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
                 child: TextField(
                   controller: _searchController,
-                  onChanged: (_) => setState(() {}),
+                  onChanged: (val) => setState(() {}),
                   decoration: InputDecoration(
-                    hintText: 'Search by title, URL, type, or text...',
+                    hintText: _tabController.index == 2
+                        ? 'Search scanned QR codes...'
+                        : 'Search titles, formats, URLs...',
                     prefixIcon: const Icon(Icons.search_rounded, size: 20),
                     suffixIcon: _searchController.text.isNotEmpty
                         ? IconButton(
@@ -483,14 +637,12 @@ class HistoryScreenState extends State<HistoryScreen>
                           )
                         : null,
                     contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
+                        horizontal: 14, vertical: 10),
                   ),
                 ),
               ),
 
-              // 2. Filter Chips
+              // 2. Format Category Filter Chips
               SizedBox(
                 height: 38,
                 child: ListView(
@@ -526,7 +678,7 @@ class HistoryScreenState extends State<HistoryScreen>
                 child: TabBarView(
                   controller: _tabController,
                   children: [
-                    // Tab 1: Generated QR
+                    // Tab 1: Generated QR (Date Grouped)
                     _buildGeneratedTab(generatedItems),
 
                     // Tab 2: Favorites
@@ -544,19 +696,129 @@ class HistoryScreenState extends State<HistoryScreen>
     );
   }
 
-  // ================= TAB 1: GENERATED QR =================
+  // ================= TAB 1: GENERATED QR (DATE GROUPED) =================
   Widget _buildGeneratedTab(List<QrItem> allItems) {
     if (allItems.isEmpty) {
       return EmptyStateView(
         icon: Icons.qr_code_2_rounded,
         title: 'No Generated QR Codes',
-        message: 'Codes you create will automatically appear here. Try creating a custom code now!',
+        message:
+            'Codes you create will automatically appear here. Try creating a custom code now!',
         buttonText: 'Create QR Code',
         onButtonPressed: () => widget.onNavigateToTab(1),
       );
     }
 
     final filtered = _filterAndSort(allItems);
+
+    if (filtered.isEmpty) {
+      return _buildSearchEmptyState();
+    }
+
+    // Date grouping: Today, Yesterday, Earlier
+    final dateGroups = _groupByDate(filtered);
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
+      children: dateGroups.entries.map((group) {
+        final groupTitle = group.key;
+        final groupItems = group.value;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Section Header
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+              child: Row(
+                children: [
+                  Icon(
+                    groupTitle == 'Today'
+                        ? Icons.today_rounded
+                        : (groupTitle == 'Yesterday'
+                            ? Icons.history_rounded
+                            : Icons.calendar_month_rounded),
+                    size: 15,
+                    color: AppColors.primary,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '$groupTitle (${groupItems.length})',
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primary,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Expanded(child: Divider()),
+                ],
+              ),
+            ),
+
+            // Items in group
+            ...groupItems.map((item) {
+              final isSelected = _selectedItemIds.contains(item.id);
+
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: QrCard(
+                  item: item,
+                  showDelete: true,
+                  isSelectionMode: _isSelectionMode,
+                  isSelected: isSelected,
+                  onSelectChanged: (val) {
+                    setState(() {
+                      if (val == true) {
+                        _selectedItemIds.add(item.id);
+                      } else {
+                        _selectedItemIds.remove(item.id);
+                      }
+                    });
+                  },
+                  onFavoriteToggle: () async {
+                    await widget.storageService.toggleFavorite(item.id);
+                  },
+                  onEdit: () => _editItem(item),
+                  onDuplicate: () => _duplicateItem(item),
+                  onRegenerate: () => _regenerateItem(item),
+                  onDelete: () => _confirmDeleteSingle(context, item),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => QrPreviewScreen(
+                          item: item,
+                          storageService: widget.storageService,
+                          onEdit: () => _editItem(item),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              );
+            }),
+          ],
+        );
+      }).toList(),
+    );
+  }
+
+  // ================= TAB 2: FAVORITES =================
+  Widget _buildFavoritesTab(List<QrItem> favorites) {
+    if (favorites.isEmpty) {
+      return EmptyStateView(
+        icon: Icons.favorite_border_rounded,
+        title: 'No Favorites Yet',
+        message:
+            'Tap the heart icon on any QR code in preview or history to pin your most essential codes here for instant access!',
+        buttonText: 'Create a QR Code',
+        onButtonPressed: () => widget.onNavigateToTab(1),
+      );
+    }
+
+    final filtered = _filterAndSort(favorites);
 
     if (filtered.isEmpty) {
       return _buildSearchEmptyState();
@@ -587,9 +849,9 @@ class HistoryScreenState extends State<HistoryScreen>
           onFavoriteToggle: () async {
             await widget.storageService.toggleFavorite(item.id);
           },
-          onEdit: () {
-            widget.onNavigateToTab(1, item.type);
-          },
+          onEdit: () => _editItem(item),
+          onDuplicate: () => _duplicateItem(item),
+          onRegenerate: () => _regenerateItem(item),
           onDelete: () => _confirmDeleteSingle(context, item),
           onTap: () {
             Navigator.push(
@@ -598,59 +860,7 @@ class HistoryScreenState extends State<HistoryScreen>
                 builder: (context) => QrPreviewScreen(
                   item: item,
                   storageService: widget.storageService,
-                  onEdit: () => widget.onNavigateToTab(1, item.type),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  // ================= TAB 2: FAVORITES =================
-  Widget _buildFavoritesTab(List<QrItem> favorites) {
-    if (favorites.isEmpty) {
-      return EmptyStateView(
-        icon: Icons.favorite_border_rounded,
-        title: 'No Favorites Yet',
-        message: 'Tap the heart icon on any QR code in preview or history to pin your most essential codes here for instant access!',
-        buttonText: 'Create a QR Code',
-        onButtonPressed: () => widget.onNavigateToTab(1),
-      );
-    }
-
-    final filtered = _filterAndSort(favorites);
-
-    if (filtered.isEmpty) {
-      return _buildSearchEmptyState();
-    }
-
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
-      itemCount: filtered.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 8),
-      itemBuilder: (context, index) {
-        final item = filtered[index];
-
-        return QrCard(
-          item: item,
-          showDelete: true,
-          onFavoriteToggle: () async {
-            await widget.storageService.toggleFavorite(item.id);
-          },
-          onEdit: () {
-            widget.onNavigateToTab(1, item.type);
-          },
-          onDelete: () => _confirmDeleteSingle(context, item),
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => QrPreviewScreen(
-                  item: item,
-                  storageService: widget.storageService,
-                  onEdit: () => widget.onNavigateToTab(1, item.type),
+                  onEdit: () => _editItem(item),
                 ),
               ),
             );
@@ -666,7 +876,8 @@ class HistoryScreenState extends State<HistoryScreen>
       return EmptyStateView(
         icon: Icons.qr_code_scanner_rounded,
         title: 'No Scanned QR Codes',
-        message: 'Point your camera at any QR code using the Scanner to decode and save records automatically!',
+        message:
+            'Point your camera at any QR code using the Scanner to decode and save records automatically!',
         buttonText: 'Open Scanner',
         onButtonPressed: () => widget.onNavigateToTab(3),
       );
@@ -761,7 +972,7 @@ class HistoryScreenState extends State<HistoryScreen>
                             ),
                           ],
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 6),
                         Text(
                           item.title,
                           maxLines: 1,
@@ -771,13 +982,15 @@ class HistoryScreenState extends State<HistoryScreen>
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                        const SizedBox(height: 2),
+                        const SizedBox(height: 3),
                         Text(
-                          item.rawContent,
+                          item.subtitle.isNotEmpty
+                              ? item.subtitle
+                              : item.rawContent,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 12,
+                            fontSize: 12.5,
                             color: isDark
                                 ? AppColors.darkTextSecondary
                                 : AppColors.lightTextSecondary,
@@ -787,85 +1000,13 @@ class HistoryScreenState extends State<HistoryScreen>
                     ),
                   ),
 
-                  // Actions menu
-                  PopupMenuButton<String>(
-                    icon: Icon(
-                      Icons.more_vert_rounded,
-                      size: 20,
-                      color: isDark
-                          ? AppColors.darkTextSecondary
-                          : AppColors.lightTextSecondary,
-                    ),
-                    onSelected: (val) async {
-                      if (val == 'view') {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => ScanResultScreen(
-                              scanItem: item,
-                              storageService: widget.storageService,
-                            ),
-                          ),
-                        );
-                      } else if (val == 'copy') {
-                        QrSharingService.copyToClipboard(
-                          context,
-                          item.rawContent,
-                          message: 'Scanned content copied!',
-                        );
-                      } else if (val == 'share') {
-                        QrSharingService.shareText(
-                          text: item.rawContent,
-                          subject: item.title,
-                        );
-                      } else if (val == 'delete') {
-                        await widget.storageService.deleteScanItem(item.id);
-                      }
+                  // Delete Scan Record
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline_rounded, size: 19),
+                    tooltip: 'Delete scan record',
+                    onPressed: () async {
+                      await widget.storageService.deleteScanItem(item.id);
                     },
-                    itemBuilder: (context) => const [
-                      PopupMenuItem(
-                        value: 'view',
-                        child: Row(
-                          children: [
-                            Icon(Icons.visibility_outlined, size: 18),
-                            SizedBox(width: 8),
-                            Text('View Details'),
-                          ],
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 'copy',
-                        child: Row(
-                          children: [
-                            Icon(Icons.copy_rounded, size: 18),
-                            SizedBox(width: 8),
-                            Text('Copy Content'),
-                          ],
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 'share',
-                        child: Row(
-                          children: [
-                            Icon(Icons.share_outlined, size: 18),
-                            SizedBox(width: 8),
-                            Text('Share Content'),
-                          ],
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 'delete',
-                        child: Row(
-                          children: [
-                            Icon(Icons.delete_outline_rounded,
-                                size: 18, color: AppColors.error),
-                            SizedBox(width: 8),
-                            Text('Delete',
-                                style: TextStyle(color: AppColors.error)),
-                          ],
-                        ),
-                      ),
-                    ],
                   ),
                 ],
               ),
@@ -876,27 +1017,70 @@ class HistoryScreenState extends State<HistoryScreen>
     );
   }
 
+  Widget _buildFilterChip({
+    required String label,
+    required bool isSelected,
+    Color? color,
+    required VoidCallback onTap,
+  }) {
+    final chipColor = color ?? AppColors.primary;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? chipColor
+              : (isDark ? AppColors.darkCard : Colors.white),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected
+                ? chipColor
+                : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
+            width: isSelected ? 1.5 : 1,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+            color: isSelected
+                ? Colors.white
+                : (isDark
+                    ? AppColors.darkTextPrimary
+                    : AppColors.lightTextPrimary),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildSearchEmptyState() {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(32),
+        padding: const EdgeInsets.all(24),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Icon(Icons.search_off_rounded, size: 48, color: Colors.grey),
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
             const Text(
               'No Matching Results',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 6),
             const Text(
-              'Try changing your search terms or clearing the format filter.',
+              'Try adjusting your search query or removing the active format filter.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 13, color: Colors.grey),
             ),
-            const SizedBox(height: 14),
-            TextButton(
+            const SizedBox(height: 16),
+            OutlinedButton(
               onPressed: () {
                 _searchController.clear();
                 setState(() => _selectedFilterType = null);
@@ -904,49 +1088,6 @@ class HistoryScreenState extends State<HistoryScreen>
               child: const Text('Reset Search & Filter'),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFilterChip({
-    required String label,
-    required bool isSelected,
-    Color? color,
-    required VoidCallback onTap,
-  }) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final activeColor = color ?? AppColors.primary;
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? activeColor
-              : (isDark ? AppColors.darkCard : Colors.white),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isSelected
-                ? activeColor
-                : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
-          ),
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-              color: isSelected
-                  ? Colors.white
-                  : (isDark
-                      ? AppColors.darkTextPrimary
-                      : AppColors.lightTextPrimary),
-            ),
-          ),
         ),
       ),
     );

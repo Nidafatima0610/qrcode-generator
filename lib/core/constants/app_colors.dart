@@ -24,6 +24,8 @@ class AppColors {
   static const Color typeSms = Color(0xFFEC4899); // Pink
   static const Color typeLocation = Color(0xFFF43F5E); // Rose
   static const Color typeSocial = Color(0xFF8B5CF6); // Purple
+  static const Color typeBusinessCard = Color(0xFF0D9488); // Teal
+  static const Color typeBusinessInfo = Color(0xFFEA580C); // Orange
 
   // Light Theme Surfaces
   static const Color lightBg = Color(0xFFF8FAFC);

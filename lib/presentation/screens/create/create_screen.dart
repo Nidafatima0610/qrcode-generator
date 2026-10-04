@@ -3,23 +3,27 @@ import 'package:uuid/uuid.dart';
 import 'package:qrcode_generator/core/constants/app_colors.dart';
 import 'package:qrcode_generator/core/models/qr_customization.dart';
 import 'package:qrcode_generator/core/models/qr_item.dart';
+import 'package:qrcode_generator/core/models/qr_preset.dart';
 import 'package:qrcode_generator/core/models/qr_type.dart';
 import 'package:qrcode_generator/core/services/qr_payload_builder.dart';
 import 'package:qrcode_generator/core/services/storage_service.dart';
+import 'package:qrcode_generator/presentation/screens/presets/presets_screen.dart';
+import 'package:qrcode_generator/presentation/screens/preview/qr_preview_screen.dart';
 import 'package:qrcode_generator/presentation/widgets/custom_text_field.dart';
 import 'package:qrcode_generator/presentation/widgets/qr_render_view.dart';
-import 'package:qrcode_generator/presentation/screens/preview/qr_preview_screen.dart';
 
 class CreateScreen extends StatefulWidget {
   final StorageService storageService;
   final QrType initialType;
   final Map<String, dynamic>? initialValues;
+  final QrItem? editingItem;
 
   const CreateScreen({
     super.key,
     required this.storageService,
     this.initialType = QrType.url,
     this.initialValues,
+    this.editingItem,
   });
 
   @override
@@ -72,14 +76,33 @@ class _CreateScreenState extends State<CreateScreen> {
   final _smsPhoneController = TextEditingController();
   final _smsMessageController = TextEditingController();
 
-  // Controllers for Location (Requirement 5)
+  // Controllers for Location
   final _locationNameController = TextEditingController();
   final _locationLatController = TextEditingController();
   final _locationLngController = TextEditingController();
 
-  // Controllers for Social Profile (Requirement 4)
+  // Controllers for Social Profile
   String _socialPlatform = 'Instagram';
   final _socialUrlController = TextEditingController();
+
+  // Controllers for Business Card (vCard)
+  final _bizCardFullNameController = TextEditingController();
+  final _bizCardTitleController = TextEditingController();
+  final _bizCardCompanyController = TextEditingController();
+  final _bizCardPhoneController = TextEditingController();
+  final _bizCardEmailController = TextEditingController();
+  final _bizCardWebsiteController = TextEditingController();
+  final _bizCardAddressController = TextEditingController();
+  final _bizCardSocialController = TextEditingController();
+
+  // Controllers for Business Information
+  final _bizInfoNameController = TextEditingController();
+  final _bizInfoPhoneController = TextEditingController();
+  final _bizInfoEmailController = TextEditingController();
+  final _bizInfoWebsiteController = TextEditingController();
+  final _bizInfoAddressController = TextEditingController();
+  final _bizInfoDescController = TextEditingController();
+  final _bizInfoHoursController = TextEditingController();
 
   static const List<String> _socialPlatforms = [
     'Instagram',
@@ -95,9 +118,104 @@ class _CreateScreenState extends State<CreateScreen> {
   @override
   void initState() {
     super.initState();
-    _selectedType = widget.initialType;
-    if (widget.initialValues != null) {
-      _applyInitialValues(widget.initialValues!);
+    // Default preferences from settings
+    _qrSize = widget.storageService.defaultQrSize;
+    _selectedErrorCorrection = widget.storageService.defaultErrorCorrection;
+
+    if (widget.editingItem != null) {
+      _selectedType = widget.editingItem!.type;
+      _populateFromEditingItem(widget.editingItem!);
+    } else {
+      _selectedType = widget.initialType;
+      if (widget.initialValues != null) {
+        _applyInitialValues(widget.initialValues!);
+      }
+    }
+  }
+
+  void _populateFromEditingItem(QrItem item) {
+    // Restore customization
+    final cust = item.customization;
+    _qrSize = cust.size;
+    _selectedErrorCorrection = cust.errorCorrectionLevel;
+    _selectedEyeShape = cust.eyeShape;
+    _selectedModuleShape = cust.dataModuleShape;
+
+    // Find color preset match if any
+    for (int i = 0; i < AppColors.presets.length; i++) {
+      if (AppColors.presets[i].foreground.toARGB32() == cust.foregroundColor.toARGB32() &&
+          AppColors.presets[i].background.toARGB32() == cust.backgroundColor.toARGB32()) {
+        _selectedColorPresetIndex = i;
+        break;
+      }
+    }
+
+    // Restore form values
+    if (item.formData != null && item.formData!.isNotEmpty) {
+      _applyInitialValues(item.formData!);
+    } else {
+      // Fallback: parse raw payload
+      final parsed = QrPayloadBuilder.parse(item.rawPayload);
+      switch (item.type) {
+        case QrType.text:
+          _textController.text = item.rawPayload;
+          break;
+        case QrType.url:
+          _urlController.text = item.rawPayload;
+          break;
+        case QrType.wifi:
+          _wifiSsidController.text = parsed.details['SSID'] ?? '';
+          _wifiPasswordController.text = parsed.details['Password'] ?? '';
+          _wifiSecurity = parsed.details['Security'] ?? 'WPA';
+          _wifiHidden = parsed.details['Hidden'] == 'Yes';
+          break;
+        case QrType.contact:
+          _contactFirstNameController.text = parsed.details['Name'] ?? '';
+          _contactPhoneController.text = parsed.details['Phone'] ?? '';
+          _contactEmailController.text = parsed.details['Email'] ?? '';
+          _contactOrgController.text = parsed.details['Organization'] ?? '';
+          _contactAddressController.text = parsed.details['Address'] ?? '';
+          _contactWebsiteController.text = parsed.details['Website'] ?? '';
+          break;
+        case QrType.businessCard:
+          _bizCardFullNameController.text = parsed.details['Name'] ?? '';
+          _bizCardTitleController.text = parsed.details['Job Title'] ?? '';
+          _bizCardCompanyController.text = parsed.details['Organization'] ?? '';
+          _bizCardPhoneController.text = parsed.details['Phone'] ?? '';
+          _bizCardEmailController.text = parsed.details['Email'] ?? '';
+          _bizCardWebsiteController.text = parsed.details['Website'] ?? '';
+          _bizCardAddressController.text = parsed.details['Address'] ?? '';
+          _bizCardSocialController.text = parsed.details['Social Profile'] ?? '';
+          break;
+        case QrType.businessInfo:
+          _bizInfoNameController.text = parsed.details['Name'] ?? '';
+          _bizInfoPhoneController.text = parsed.details['Phone'] ?? '';
+          _bizInfoEmailController.text = parsed.details['Email'] ?? '';
+          _bizInfoWebsiteController.text = parsed.details['Website'] ?? '';
+          _bizInfoAddressController.text = parsed.details['Address'] ?? '';
+          _bizInfoDescController.text = parsed.details['Notes'] ?? '';
+          break;
+        case QrType.email:
+          _emailRecipientController.text = parsed.details['To'] ?? '';
+          _emailSubjectController.text = parsed.details['Subject'] ?? '';
+          _emailBodyController.text = parsed.details['Message'] ?? '';
+          break;
+        case QrType.phone:
+          _phoneController.text = parsed.details['Phone'] ?? item.rawPayload.replaceAll('tel:', '');
+          break;
+        case QrType.sms:
+          _smsPhoneController.text = parsed.details['Phone'] ?? '';
+          _smsMessageController.text = parsed.details['Message'] ?? '';
+          break;
+        case QrType.location:
+          _locationLatController.text = parsed.details['Latitude'] ?? '';
+          _locationLngController.text = parsed.details['Longitude'] ?? '';
+          _locationNameController.text = parsed.details['Location'] ?? '';
+          break;
+        case QrType.social:
+          _socialUrlController.text = parsed.details['Profile URL'] ?? item.rawPayload;
+          break;
+      }
     }
   }
 
@@ -114,14 +232,29 @@ class _CreateScreenState extends State<CreateScreen> {
       _contactPhoneController.text = vals['phone'].toString();
       _phoneController.text = vals['phone'].toString();
       _smsPhoneController.text = vals['phone'].toString();
+      _bizCardPhoneController.text = vals['phone'].toString();
+      _bizInfoPhoneController.text = vals['phone'].toString();
     }
     if (vals.containsKey('email')) {
       _contactEmailController.text = vals['email'].toString();
       _emailRecipientController.text = vals['email'].toString();
+      _bizCardEmailController.text = vals['email'].toString();
+      _bizInfoEmailController.text = vals['email'].toString();
     }
-    if (vals.containsKey('company')) _contactOrgController.text = vals['company'].toString();
-    if (vals.containsKey('address')) _contactAddressController.text = vals['address'].toString();
-    if (vals.containsKey('website')) _contactWebsiteController.text = vals['website'].toString();
+    if (vals.containsKey('company')) {
+      _contactOrgController.text = vals['company'].toString();
+      _bizCardCompanyController.text = vals['company'].toString();
+    }
+    if (vals.containsKey('address')) {
+      _contactAddressController.text = vals['address'].toString();
+      _bizCardAddressController.text = vals['address'].toString();
+      _bizInfoAddressController.text = vals['address'].toString();
+    }
+    if (vals.containsKey('website')) {
+      _contactWebsiteController.text = vals['website'].toString();
+      _bizCardWebsiteController.text = vals['website'].toString();
+      _bizInfoWebsiteController.text = vals['website'].toString();
+    }
     if (vals.containsKey('subject')) _emailSubjectController.text = vals['subject'].toString();
     if (vals.containsKey('body')) _emailBodyController.text = vals['body'].toString();
     if (vals.containsKey('message')) _smsMessageController.text = vals['message'].toString();
@@ -129,20 +262,107 @@ class _CreateScreenState extends State<CreateScreen> {
     if (vals.containsKey('latitude')) _locationLatController.text = vals['latitude'].toString();
     if (vals.containsKey('longitude')) _locationLngController.text = vals['longitude'].toString();
     if (vals.containsKey('platform')) _socialPlatform = vals['platform'].toString();
+    if (vals.containsKey('socialUrl')) {
+      _socialUrlController.text = vals['socialUrl'].toString();
+      _bizCardSocialController.text = vals['socialUrl'].toString();
+    }
+    if (vals.containsKey('fullName')) _bizCardFullNameController.text = vals['fullName'].toString();
+    if (vals.containsKey('jobTitle')) _bizCardTitleController.text = vals['jobTitle'].toString();
+    if (vals.containsKey('businessName')) _bizInfoNameController.text = vals['businessName'].toString();
+    if (vals.containsKey('description')) _bizInfoDescController.text = vals['description'].toString();
+    if (vals.containsKey('businessHours')) _bizInfoHoursController.text = vals['businessHours'].toString();
   }
 
-  @override
-  void didUpdateWidget(covariant CreateScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.initialType != widget.initialType) {
-      setState(() {
-        _selectedType = widget.initialType;
-      });
-    }
-    if (widget.initialValues != null &&
-        widget.initialValues != oldWidget.initialValues) {
-      _applyInitialValues(widget.initialValues!);
-    }
+  void _applyPreset(QrPreset preset) {
+    setState(() {
+      _selectedType = preset.type;
+      final cust = preset.customization;
+      _qrSize = cust.size;
+      _selectedErrorCorrection = cust.errorCorrectionLevel;
+      _selectedEyeShape = cust.eyeShape;
+      _selectedModuleShape = cust.dataModuleShape;
+
+      for (int i = 0; i < AppColors.presets.length; i++) {
+        if (AppColors.presets[i].foreground.toARGB32() == cust.foregroundColor.toARGB32() &&
+            AppColors.presets[i].background.toARGB32() == cust.backgroundColor.toARGB32()) {
+          _selectedColorPresetIndex = i;
+          break;
+        }
+      }
+
+      if (preset.fields.isNotEmpty) {
+        _applyInitialValues(preset.fields);
+      }
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Applied preset "${preset.name}"'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _saveCurrentAsPreset() {
+    final nameController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Save as Preset'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Save your current QR style, shape, and configurations for quick reuse.',
+              style: TextStyle(fontSize: 12.5, color: Colors.grey),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: nameController,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Preset Name *',
+                hintText: 'e.g. Dark Cyan Card',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final name = nameController.text.trim();
+              if (name.isNotEmpty) {
+                Navigator.pop(ctx);
+                final newPreset = QrPreset(
+                  id: const Uuid().v4(),
+                  name: name,
+                  type: _selectedType,
+                  defaultTitle: _buildTitle(),
+                  customization: _currentCustomization,
+                  fields: _currentFormData,
+                  createdAt: DateTime.now(),
+                );
+                await widget.storageService.savePreset(newPreset);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Saved preset "$name"'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              }
+            },
+            child: const Text('Save Preset'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -168,6 +388,21 @@ class _CreateScreenState extends State<CreateScreen> {
     _locationLatController.dispose();
     _locationLngController.dispose();
     _socialUrlController.dispose();
+    _bizCardFullNameController.dispose();
+    _bizCardTitleController.dispose();
+    _bizCardCompanyController.dispose();
+    _bizCardPhoneController.dispose();
+    _bizCardEmailController.dispose();
+    _bizCardWebsiteController.dispose();
+    _bizCardAddressController.dispose();
+    _bizCardSocialController.dispose();
+    _bizInfoNameController.dispose();
+    _bizInfoPhoneController.dispose();
+    _bizInfoEmailController.dispose();
+    _bizInfoWebsiteController.dispose();
+    _bizInfoAddressController.dispose();
+    _bizInfoDescController.dispose();
+    _bizInfoHoursController.dispose();
     super.dispose();
   }
 
@@ -200,6 +435,77 @@ class _CreateScreenState extends State<CreateScreen> {
     );
   }
 
+  Map<String, dynamic> get _currentFormData {
+    switch (_selectedType) {
+      case QrType.text:
+        return {'text': _textController.text.trim()};
+      case QrType.url:
+        return {'url': _urlController.text.trim()};
+      case QrType.wifi:
+        return {
+          'ssid': _wifiSsidController.text.trim(),
+          'password': _wifiPasswordController.text.trim(),
+          'security': _wifiSecurity,
+          'hidden': _wifiHidden,
+        };
+      case QrType.contact:
+        return {
+          'firstName': _contactFirstNameController.text.trim(),
+          'lastName': _contactLastNameController.text.trim(),
+          'phone': _contactPhoneController.text.trim(),
+          'email': _contactEmailController.text.trim(),
+          'company': _contactOrgController.text.trim(),
+          'address': _contactAddressController.text.trim(),
+          'website': _contactWebsiteController.text.trim(),
+        };
+      case QrType.businessCard:
+        return {
+          'fullName': _bizCardFullNameController.text.trim(),
+          'jobTitle': _bizCardTitleController.text.trim(),
+          'company': _bizCardCompanyController.text.trim(),
+          'phone': _bizCardPhoneController.text.trim(),
+          'email': _bizCardEmailController.text.trim(),
+          'website': _bizCardWebsiteController.text.trim(),
+          'address': _bizCardAddressController.text.trim(),
+          'socialUrl': _bizCardSocialController.text.trim(),
+        };
+      case QrType.businessInfo:
+        return {
+          'businessName': _bizInfoNameController.text.trim(),
+          'phone': _bizInfoPhoneController.text.trim(),
+          'email': _bizInfoEmailController.text.trim(),
+          'website': _bizInfoWebsiteController.text.trim(),
+          'address': _bizInfoAddressController.text.trim(),
+          'description': _bizInfoDescController.text.trim(),
+          'businessHours': _bizInfoHoursController.text.trim(),
+        };
+      case QrType.email:
+        return {
+          'email': _emailRecipientController.text.trim(),
+          'subject': _emailSubjectController.text.trim(),
+          'body': _emailBodyController.text.trim(),
+        };
+      case QrType.phone:
+        return {'phone': _phoneController.text.trim()};
+      case QrType.sms:
+        return {
+          'phone': _smsPhoneController.text.trim(),
+          'message': _smsMessageController.text.trim(),
+        };
+      case QrType.location:
+        return {
+          'name': _locationNameController.text.trim(),
+          'latitude': _locationLatController.text.trim(),
+          'longitude': _locationLngController.text.trim(),
+        };
+      case QrType.social:
+        return {
+          'platform': _socialPlatform,
+          'socialUrl': _socialUrlController.text.trim(),
+        };
+    }
+  }
+
   String _buildPayload() {
     switch (_selectedType) {
       case QrType.text:
@@ -222,6 +528,27 @@ class _CreateScreenState extends State<CreateScreen> {
           company: _contactOrgController.text,
           address: _contactAddressController.text,
           website: _contactWebsiteController.text,
+        );
+      case QrType.businessCard:
+        return QrPayloadBuilder.buildBusinessCard(
+          fullName: _bizCardFullNameController.text,
+          jobTitle: _bizCardTitleController.text,
+          company: _bizCardCompanyController.text,
+          phone: _bizCardPhoneController.text,
+          email: _bizCardEmailController.text,
+          website: _bizCardWebsiteController.text,
+          address: _bizCardAddressController.text,
+          socialUrl: _bizCardSocialController.text,
+        );
+      case QrType.businessInfo:
+        return QrPayloadBuilder.buildBusinessInfo(
+          businessName: _bizInfoNameController.text,
+          phone: _bizInfoPhoneController.text,
+          email: _bizInfoEmailController.text,
+          website: _bizInfoWebsiteController.text,
+          address: _bizInfoAddressController.text,
+          description: _bizInfoDescController.text,
+          businessHours: _bizInfoHoursController.text,
         );
       case QrType.email:
         return QrPayloadBuilder.buildEmail(
@@ -256,9 +583,10 @@ class _CreateScreenState extends State<CreateScreen> {
     switch (_selectedType) {
       case QrType.text:
         final t = _textController.text.trim();
-        return t.length > 25 ? '${t.substring(0, 25)}...' : t;
+        return t.length > 25 ? '${t.substring(0, 25)}...' : (t.isNotEmpty ? t : 'Text QR');
       case QrType.url:
-        return _urlController.text.trim();
+        final u = _urlController.text.trim();
+        return u.isNotEmpty ? u : 'Website URL';
       case QrType.wifi:
         return 'Wi-Fi: ${_wifiSsidController.text.trim()}';
       case QrType.contact:
@@ -266,6 +594,12 @@ class _CreateScreenState extends State<CreateScreen> {
             '${_contactFirstNameController.text.trim()} ${_contactLastNameController.text.trim()}'
                 .trim();
         return name.isNotEmpty ? name : 'New Contact';
+      case QrType.businessCard:
+        final name = _bizCardFullNameController.text.trim();
+        return name.isNotEmpty ? '$name (Biz Card)' : 'Business Card';
+      case QrType.businessInfo:
+        final bName = _bizInfoNameController.text.trim();
+        return bName.isNotEmpty ? bName : 'Business Information';
       case QrType.email:
         return 'Email: ${_emailRecipientController.text.trim()}';
       case QrType.phone:
@@ -293,6 +627,17 @@ class _CreateScreenState extends State<CreateScreen> {
         return _contactPhoneController.text.isNotEmpty
             ? _contactPhoneController.text.trim()
             : _contactEmailController.text.trim();
+      case QrType.businessCard:
+        final title = _bizCardTitleController.text.trim();
+        final company = _bizCardCompanyController.text.trim();
+        if (title.isNotEmpty && company.isNotEmpty) return '$title at $company';
+        if (title.isNotEmpty) return title;
+        return _bizCardPhoneController.text.trim();
+      case QrType.businessInfo:
+        final phone = _bizInfoPhoneController.text.trim();
+        final hours = _bizInfoHoursController.text.trim();
+        if (hours.isNotEmpty) return 'Hours: $hours';
+        return phone.isNotEmpty ? phone : 'Business details';
       case QrType.email:
         return _emailSubjectController.text.trim().isNotEmpty
             ? _emailSubjectController.text.trim()
@@ -308,7 +653,7 @@ class _CreateScreenState extends State<CreateScreen> {
     }
   }
 
-  void _generateQrCode() async {
+  void _generateQrCode({bool saveAsNew = false}) async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -316,28 +661,53 @@ class _CreateScreenState extends State<CreateScreen> {
     final payload = _buildPayload();
     final title = _buildTitle();
     final subtitle = _buildSubtitle();
+    final formData = _currentFormData;
 
-    final newItem = QrItem(
-      id: const Uuid().v4(),
+    final String itemId = (widget.editingItem != null && !saveAsNew)
+        ? widget.editingItem!.id
+        : const Uuid().v4();
+
+    final DateTime createdAt = (widget.editingItem != null && !saveAsNew)
+        ? widget.editingItem!.createdAt
+        : DateTime.now();
+
+    final bool isFavorite = (widget.editingItem != null && !saveAsNew)
+        ? widget.editingItem!.isFavorite
+        : false;
+
+    final updatedOrNewItem = QrItem(
+      id: itemId,
       type: _selectedType,
       title: title,
       subtitle: subtitle,
       rawPayload: payload,
-      createdAt: DateTime.now(),
+      createdAt: createdAt,
       customization: _currentCustomization,
+      isFavorite: isFavorite,
+      formData: formData,
     );
 
-    // Save automatically to persistent history
-    await widget.storageService.saveItem(newItem);
+    // Save to persistent storage
+    await widget.storageService.saveItem(updatedOrNewItem);
 
     if (!mounted) return;
+
+    final isEditUpdate = widget.editingItem != null && !saveAsNew;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(isEditUpdate
+            ? 'Updated "$title" successfully!'
+            : 'Generated and saved "$title"!'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
 
     // Navigate to preview screen
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => QrPreviewScreen(
-          item: newItem,
+          item: updatedOrNewItem,
           storageService: widget.storageService,
         ),
       ),
@@ -347,10 +717,34 @@ class _CreateScreenState extends State<CreateScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isEditing = widget.editingItem != null;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Create QR Code'),
+        title: Text(isEditing ? 'Edit QR Code' : 'Create QR Code'),
+        actions: [
+          // Presets Action
+          IconButton(
+            icon: const Icon(Icons.bookmark_outline_rounded),
+            tooltip: 'Presets',
+            onPressed: () async {
+              final selected = await Navigator.push<QrPreset>(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => PresetsScreen(
+                    storageService: widget.storageService,
+                    onUsePreset: (preset) {
+                      Navigator.pop(context, preset);
+                    },
+                  ),
+                ),
+              );
+              if (selected != null) {
+                _applyPreset(selected);
+              }
+            },
+          ),
+        ],
       ),
       body: SafeArea(
         child: Form(
@@ -358,13 +752,47 @@ class _CreateScreenState extends State<CreateScreen> {
           child: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
             children: [
+              // Editing Banner if active
+              if (isEditing) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.edit_note_rounded, color: AppColors.primary),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Editing: "${widget.editingItem!.title}"\nYou can update the existing record or save as a new copy.',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
               // 1. QR Type Selection Title
-              Text(
-                'Select QR Type',
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.2,
-                    ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Select QR Type',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.2,
+                        ),
+                  ),
+                  Text(
+                    '${QrType.values.length} Formats',
+                    style: const TextStyle(fontSize: 11.5, color: Colors.grey),
+                  ),
+                ],
               ),
               const SizedBox(height: 12),
 
@@ -495,7 +923,11 @@ class _CreateScreenState extends State<CreateScreen> {
               _buildTypeForm(),
               const SizedBox(height: 24),
 
-              // 3. Advanced QR Customization Accordion (Requirement 6)
+              // 3. Live Preview Card before generation
+              _buildLivePreviewCard(isDark),
+              const SizedBox(height: 20),
+
+              // 4. Advanced QR Customization Accordion
               Card(
                 child: ExpansionTile(
                   initiallyExpanded: _showCustomization,
@@ -518,11 +950,11 @@ class _CreateScreenState extends State<CreateScreen> {
                     ),
                   ),
                   title: const Text(
-                    'Advanced Customization',
+                    'Advanced Customization & Presets',
                     style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700),
                   ),
                   subtitle: Text(
-                    'Colors, module & eye style, size, resilience',
+                    'Colors, shapes, size, and save presets',
                     style: TextStyle(
                       fontSize: 12,
                       color: isDark
@@ -539,69 +971,27 @@ class _CreateScreenState extends State<CreateScreen> {
                           const Divider(),
                           const SizedBox(height: 8),
 
-                          // Live Preview Inside Customization Panel
-                          Center(
-                            child: Container(
-                              margin: const EdgeInsets.symmetric(vertical: 8),
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: isDark
-                                    ? AppColors.darkSurface
-                                    : Colors.grey.shade100,
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: isDark
-                                      ? AppColors.darkBorder
-                                      : AppColors.lightBorder,
-                                ),
+                          // Presets quick actions bar inside customization
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              TextButton.icon(
+                                onPressed: _saveCurrentAsPreset,
+                                icon: const Icon(Icons.bookmark_add_outlined, size: 18),
+                                label: const Text('Save as Preset', style: TextStyle(fontSize: 12)),
                               ),
-                              child: Column(
-                                children: [
-                                  QrRenderView(
-                                    data: 'https://qrstudiopro.preview',
-                                    customization: _currentCustomization,
-                                    size: 130,
-                                    showContainer: false,
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'Live Customization Preview',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                      color: isDark
-                                          ? AppColors.darkTextMuted
-                                          : AppColors.lightTextMuted,
-                                    ),
-                                  ),
-                                ],
+                              TextButton(
+                                onPressed: _resetCustomization,
+                                child: const Text('Reset', style: TextStyle(fontSize: 12)),
                               ),
-                            ),
+                            ],
                           ),
                           const SizedBox(height: 12),
 
                           // Color Palette Presets
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text(
-                                'Color Palette',
-                                style: TextStyle(
-                                    fontSize: 13, fontWeight: FontWeight.w600),
-                              ),
-                              TextButton(
-                                style: TextButton.styleFrom(
-                                  padding: EdgeInsets.zero,
-                                  minimumSize: const Size(60, 24),
-                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                ),
-                                onPressed: _resetCustomization,
-                                child: const Text(
-                                  'Reset Customization',
-                                  style: TextStyle(fontSize: 11.5),
-                                ),
-                              ),
-                            ],
+                          const Text(
+                            'Color Palette',
+                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                           ),
                           const SizedBox(height: 8),
                           SizedBox(
@@ -663,13 +1053,17 @@ class _CreateScreenState extends State<CreateScreen> {
                                         const SizedBox(height: 4),
                                         Text(
                                           p.name.split(' ').first,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
                                           style: TextStyle(
-                                            fontSize: 10,
+                                            fontSize: 9.5,
                                             fontWeight: isSelected
                                                 ? FontWeight.w700
                                                 : FontWeight.w500,
+                                            color: isSelected
+                                                ? AppColors.primary
+                                                : (isDark
+                                                    ? AppColors.darkTextSecondary
+                                                    : AppColors
+                                                        .lightTextSecondary),
                                           ),
                                         ),
                                       ],
@@ -681,16 +1075,16 @@ class _CreateScreenState extends State<CreateScreen> {
                           ),
                           const SizedBox(height: 16),
 
-                          // Shapes (Module and Eye corner style)
+                          // Module Pattern & Eye Corner Styles
                           Row(
                             children: [
-                              // Module Dots Style
+                              // Module Pattern Style
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     const Text(
-                                      'Module Style',
+                                      'Module Pattern',
                                       style: TextStyle(
                                           fontSize: 13,
                                           fontWeight: FontWeight.w600),
@@ -700,7 +1094,7 @@ class _CreateScreenState extends State<CreateScreen> {
                                       children: [
                                         _shapeChoiceChip(
                                           label: 'Square',
-                                          icon: Icons.crop_square_rounded,
+                                          icon: Icons.square_rounded,
                                           isSelected:
                                               _selectedModuleShape == 'square',
                                           onTap: () => setState(() =>
@@ -708,8 +1102,8 @@ class _CreateScreenState extends State<CreateScreen> {
                                         ),
                                         const SizedBox(width: 8),
                                         _shapeChoiceChip(
-                                          label: 'Circle',
-                                          icon: Icons.circle_outlined,
+                                          label: 'Circles',
+                                          icon: Icons.circle_rounded,
                                           isSelected:
                                               _selectedModuleShape == 'circle',
                                           onTap: () => setState(() =>
@@ -798,7 +1192,7 @@ class _CreateScreenState extends State<CreateScreen> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'Higher resilience preserves scannability even when printed on damaged or curved surfaces.',
+                            'Higher resilience preserves scannability even on damaged or curved surfaces.',
                             style: TextStyle(
                               fontSize: 11.5,
                               color: isDark
@@ -826,16 +1220,110 @@ class _CreateScreenState extends State<CreateScreen> {
               ),
               const SizedBox(height: 24),
 
-              // 4. Generate Button
-              ElevatedButton.icon(
-                onPressed: _generateQrCode,
-                icon: const Icon(Icons.qr_code_rounded, size: 22),
-                label: const Text('Generate & Preview QR'),
-              ),
-              const SizedBox(height: 30),
+              // 5. Action Buttons (Update Existing vs Save as New vs Generate)
+              if (isEditing) ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        onPressed: () => _generateQrCode(saveAsNew: false),
+                        icon: const Icon(Icons.check_circle_rounded, size: 20),
+                        label: const Text('Update Existing'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        onPressed: () => _generateQrCode(saveAsNew: true),
+                        icon: const Icon(Icons.copy_all_rounded, size: 20),
+                        label: const Text('Save as New'),
+                      ),
+                    ),
+                  ],
+                ),
+              ] else ...[
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  onPressed: () => _generateQrCode(),
+                  icon: const Icon(Icons.qr_code_rounded, size: 22),
+                  label: const Text('Generate & Preview QR'),
+                ),
+              ],
+              const SizedBox(height: 36),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildLivePreviewCard(bool isDark) {
+    final previewPayload = _buildPayload();
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkCard : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+        ),
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.visibility_rounded, size: 16, color: AppColors.primary),
+                  const SizedBox(width: 6),
+                  const Text(
+                    'Live QR Preview',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                  ),
+                ],
+              ),
+              Text(
+                _selectedType.shortName,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: _selectedType.color,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Center(
+            child: QrRenderView(
+              data: previewPayload.isNotEmpty ? previewPayload : 'https://preview.qr',
+              customization: _currentCustomization,
+              size: 150,
+              showContainer: false,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            previewPayload.isNotEmpty
+                ? 'Ready to generate'
+                : 'Enter details above to populate payload',
+            style: TextStyle(
+              fontSize: 11.5,
+              color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -942,6 +1430,10 @@ class _CreateScreenState extends State<CreateScreen> {
         return _buildWifiForm();
       case QrType.contact:
         return _buildContactForm();
+      case QrType.businessCard:
+        return _buildBusinessCardForm();
+      case QrType.businessInfo:
+        return _buildBusinessInfoForm();
       case QrType.email:
         return _buildEmailForm();
       case QrType.phone:
@@ -958,16 +1450,17 @@ class _CreateScreenState extends State<CreateScreen> {
   // 1. Text Form
   Widget _buildTextForm() {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         CustomTextField(
           controller: _textController,
           label: 'Plain Text or Note',
-          hint: 'Enter any message, notes, passwords, or text...',
+          hint: 'Enter any text message, serial number, or note...',
           prefixIcon: Icons.notes_rounded,
           maxLines: 4,
-          validator: (v) {
-            if (v == null || v.trim().isEmpty) {
-              return 'Please enter some text';
+          validator: (val) {
+            if (val == null || val.trim().isEmpty) {
+              return 'Please enter text content';
             }
             return null;
           },
@@ -979,6 +1472,7 @@ class _CreateScreenState extends State<CreateScreen> {
   // 2. URL Form
   Widget _buildUrlForm() {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         CustomTextField(
           controller: _urlController,
@@ -986,13 +1480,9 @@ class _CreateScreenState extends State<CreateScreen> {
           hint: 'https://example.com',
           prefixIcon: Icons.link_rounded,
           keyboardType: TextInputType.url,
-          validator: (v) {
-            if (v == null || v.trim().isEmpty) {
-              return 'Please enter a URL';
-            }
-            final trimmed = v.trim().toLowerCase();
-            if (trimmed == 'https://' || trimmed == 'http://') {
-              return 'Please enter a complete web address';
+          validator: (val) {
+            if (val == null || val.trim().isEmpty || val.trim() == 'https://') {
+              return 'Please enter a valid website URL';
             }
             return null;
           },
@@ -1003,18 +1493,17 @@ class _CreateScreenState extends State<CreateScreen> {
 
   // 3. Wi-Fi Form
   Widget _buildWifiForm() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         CustomTextField(
           controller: _wifiSsidController,
-          label: 'Network Name (SSID)',
+          label: 'Network Name (SSID) *',
           hint: 'MyHomeWiFi',
           prefixIcon: Icons.wifi_rounded,
-          validator: (v) {
-            if (v == null || v.trim().isEmpty) {
-              return 'Please enter Wi-Fi network name';
+          validator: (val) {
+            if (val == null || val.trim().isEmpty) {
+              return 'Network SSID name is required';
             }
             return null;
           },
@@ -1023,7 +1512,7 @@ class _CreateScreenState extends State<CreateScreen> {
         CustomTextField(
           controller: _wifiPasswordController,
           label: 'Wi-Fi Password',
-          hint: 'Network password',
+          hint: 'Enter wireless password',
           prefixIcon: Icons.lock_outline_rounded,
           obscureText: _wifiObscurePass,
           suffixIcon: IconButton(
@@ -1033,83 +1522,57 @@ class _CreateScreenState extends State<CreateScreen> {
                   : Icons.visibility_off_outlined,
               size: 20,
             ),
-            onPressed: () {
-              setState(() => _wifiObscurePass = !_wifiObscurePass);
-            },
+            onPressed: () =>
+                setState(() => _wifiObscurePass = !_wifiObscurePass),
           ),
         ),
         const SizedBox(height: 14),
-        Row(
-          children: [
-            Expanded(
-              child: DropdownButtonFormField<String>(
-                initialValue: _wifiSecurity,
-                decoration: const InputDecoration(
-                  labelText: 'Security Type',
-                  prefixIcon: Icon(Icons.security_rounded),
-                ),
-                items: const [
-                  DropdownMenuItem(value: 'WPA', child: Text('WPA/WPA2/WPA3')),
-                  DropdownMenuItem(value: 'WEP', child: Text('WEP')),
-                  DropdownMenuItem(value: 'nopass', child: Text('No Password (Open)')),
-                ],
-                onChanged: (val) {
-                  if (val != null) setState(() => _wifiSecurity = val);
-                },
-              ),
-            ),
+        DropdownButtonFormField<String>(
+          initialValue: _wifiSecurity,
+          decoration: const InputDecoration(
+            labelText: 'Security Protocol',
+            prefixIcon: Icon(Icons.security_rounded),
+          ),
+          items: const [
+            DropdownMenuItem(value: 'WPA', child: Text('WPA / WPA2 / WPA3')),
+            DropdownMenuItem(value: 'WEP', child: Text('WEP')),
+            DropdownMenuItem(value: 'nopass', child: Text('Open (No Password)')),
           ],
+          onChanged: (val) {
+            if (val != null) setState(() => _wifiSecurity = val);
+          },
         ),
-        const SizedBox(height: 14),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-          decoration: BoxDecoration(
-            color: isDark ? AppColors.darkCard : Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-            ),
+        const SizedBox(height: 8),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Hidden Network', style: TextStyle(fontSize: 14)),
+          subtitle: const Text(
+            'Enable if network SSID is not broadcasted',
+            style: TextStyle(fontSize: 12),
           ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Row(
-                children: [
-                  Icon(Icons.visibility_off_rounded, size: 20),
-                  SizedBox(width: 10),
-                  Text(
-                    'Hidden Network',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                  ),
-                ],
-              ),
-              Switch(
-                value: _wifiHidden,
-                activeThumbColor: AppColors.primary,
-                onChanged: (val) => setState(() => _wifiHidden = val),
-              ),
-            ],
-          ),
+          value: _wifiHidden,
+          onChanged: (val) => setState(() => _wifiHidden = val),
         ),
       ],
     );
   }
 
-  // 4. Contact / vCard Form
+  // 4. Contact Form (vCard)
   Widget _buildContactForm() {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
             Expanded(
               child: CustomTextField(
                 controller: _contactFirstNameController,
-                label: 'First Name',
+                label: 'First Name *',
                 hint: 'John',
                 prefixIcon: Icons.person_outline_rounded,
-                validator: (v) {
-                  if (v == null || v.trim().isEmpty) {
-                    return 'Required';
+                validator: (val) {
+                  if (val == null || val.trim().isEmpty) {
+                    return 'First name is required';
                   }
                   return null;
                 },
@@ -1131,42 +1594,36 @@ class _CreateScreenState extends State<CreateScreen> {
           controller: _contactPhoneController,
           label: 'Phone Number',
           hint: '+1 234 567 8900',
-          prefixIcon: Icons.phone_rounded,
+          prefixIcon: Icons.phone_outlined,
           keyboardType: TextInputType.phone,
-          validator: (v) {
-            if (v == null || v.trim().isEmpty) {
-              return 'Phone number is required';
-            }
-            return null;
-          },
         ),
         const SizedBox(height: 14),
         CustomTextField(
           controller: _contactEmailController,
-          label: 'Email (Optional)',
+          label: 'Email Address',
           hint: 'john.doe@example.com',
-          prefixIcon: Icons.email_outlined,
+          prefixIcon: Icons.mail_outline_rounded,
           keyboardType: TextInputType.emailAddress,
         ),
         const SizedBox(height: 14),
         CustomTextField(
           controller: _contactOrgController,
-          label: 'Company / Organization (Optional)',
+          label: 'Organization / Company',
           hint: 'Acme Corp',
           prefixIcon: Icons.business_rounded,
         ),
         const SizedBox(height: 14),
         CustomTextField(
           controller: _contactAddressController,
-          label: 'Address (Optional)',
-          hint: '123 Tech Avenue, Silicon Valley',
+          label: 'Physical Address',
+          hint: '123 Market St, Suite 400',
           prefixIcon: Icons.location_on_outlined,
         ),
         const SizedBox(height: 14),
         CustomTextField(
           controller: _contactWebsiteController,
-          label: 'Website (Optional)',
-          hint: 'https://johndoe.me',
+          label: 'Website',
+          hint: 'https://johndoe.com',
           prefixIcon: Icons.language_rounded,
           keyboardType: TextInputType.url,
         ),
@@ -1174,21 +1631,184 @@ class _CreateScreenState extends State<CreateScreen> {
     );
   }
 
-  // 5. Email Form
+  // 5. Business Card Form (Requirement: Business Card QR)
+  Widget _buildBusinessCardForm() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CustomTextField(
+          controller: _bizCardFullNameController,
+          label: 'Full Name *',
+          hint: 'Sarah Connor',
+          prefixIcon: Icons.badge_outlined,
+          validator: (val) {
+            if (val == null || val.trim().isEmpty) {
+              return 'Full name is required';
+            }
+            return null;
+          },
+        ),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            Expanded(
+              child: CustomTextField(
+                controller: _bizCardTitleController,
+                label: 'Job Title',
+                hint: 'Chief Technology Officer',
+                prefixIcon: Icons.work_outline_rounded,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: CustomTextField(
+                controller: _bizCardCompanyController,
+                label: 'Company',
+                hint: 'Cyberdyne Systems',
+                prefixIcon: Icons.business_rounded,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            Expanded(
+              child: CustomTextField(
+                controller: _bizCardPhoneController,
+                label: 'Phone',
+                hint: '+1 555 0199',
+                prefixIcon: Icons.phone_outlined,
+                keyboardType: TextInputType.phone,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: CustomTextField(
+                controller: _bizCardEmailController,
+                label: 'Work Email',
+                hint: 'sarah@cyberdyne.com',
+                prefixIcon: Icons.email_outlined,
+                keyboardType: TextInputType.emailAddress,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        CustomTextField(
+          controller: _bizCardWebsiteController,
+          label: 'Website / Portfolio',
+          hint: 'https://cyberdyne.com/sarah',
+          prefixIcon: Icons.language_rounded,
+          keyboardType: TextInputType.url,
+        ),
+        const SizedBox(height: 14),
+        CustomTextField(
+          controller: _bizCardAddressController,
+          label: 'Office Address',
+          hint: '400 Enterprise Blvd, Austin, TX',
+          prefixIcon: Icons.place_outlined,
+        ),
+        const SizedBox(height: 14),
+        CustomTextField(
+          controller: _bizCardSocialController,
+          label: 'Social / LinkedIn URL',
+          hint: 'https://linkedin.com/in/sarah-connor',
+          prefixIcon: Icons.link_rounded,
+          keyboardType: TextInputType.url,
+        ),
+      ],
+    );
+  }
+
+  // 6. Business Information Form (Requirement: Business Info QR)
+  Widget _buildBusinessInfoForm() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CustomTextField(
+          controller: _bizInfoNameController,
+          label: 'Business Name *',
+          hint: 'Green Leaf Cafe & Roastery',
+          prefixIcon: Icons.storefront_rounded,
+          validator: (val) {
+            if (val == null || val.trim().isEmpty) {
+              return 'Business name is required';
+            }
+            return null;
+          },
+        ),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            Expanded(
+              child: CustomTextField(
+                controller: _bizInfoPhoneController,
+                label: 'Business Phone',
+                hint: '+1 555 4321',
+                prefixIcon: Icons.phone_outlined,
+                keyboardType: TextInputType.phone,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: CustomTextField(
+                controller: _bizInfoEmailController,
+                label: 'Contact Email',
+                hint: 'info@greenleaf.com',
+                prefixIcon: Icons.email_outlined,
+                keyboardType: TextInputType.emailAddress,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        CustomTextField(
+          controller: _bizInfoWebsiteController,
+          label: 'Business Website',
+          hint: 'https://greenleafcafe.com',
+          prefixIcon: Icons.language_rounded,
+          keyboardType: TextInputType.url,
+        ),
+        const SizedBox(height: 14),
+        CustomTextField(
+          controller: _bizInfoAddressController,
+          label: 'Store / Location Address',
+          hint: '742 Evergreen Terrace, Springfield',
+          prefixIcon: Icons.place_outlined,
+        ),
+        const SizedBox(height: 14),
+        CustomTextField(
+          controller: _bizInfoHoursController,
+          label: 'Business Hours Text',
+          hint: 'Mon - Fri: 8:00 AM - 6:00 PM • Sat: 9:00 AM - 3:00 PM',
+          prefixIcon: Icons.access_time_rounded,
+        ),
+        const SizedBox(height: 14),
+        CustomTextField(
+          controller: _bizInfoDescController,
+          label: 'Business Description',
+          hint: 'Specialty organic coffee, artisan pastries & free high-speed Wi-Fi.',
+          prefixIcon: Icons.description_outlined,
+          maxLines: 3,
+        ),
+      ],
+    );
+  }
+
+  // 7. Email Form
   Widget _buildEmailForm() {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         CustomTextField(
           controller: _emailRecipientController,
-          label: 'Recipient Email',
-          hint: 'contact@company.com',
-          prefixIcon: Icons.email_outlined,
+          label: 'Recipient Email Address *',
+          hint: 'support@company.com',
+          prefixIcon: Icons.mail_outline_rounded,
           keyboardType: TextInputType.emailAddress,
-          validator: (v) {
-            if (v == null || v.trim().isEmpty) {
-              return 'Please enter recipient email';
-            }
-            if (!v.contains('@') || !v.contains('.')) {
+          validator: (val) {
+            if (val == null || val.trim().isEmpty || !val.contains('@')) {
               return 'Please enter a valid email address';
             }
             return null;
@@ -1197,38 +1817,36 @@ class _CreateScreenState extends State<CreateScreen> {
         const SizedBox(height: 14),
         CustomTextField(
           controller: _emailSubjectController,
-          label: 'Subject',
-          hint: 'Meeting follow up / Inquiry',
+          label: 'Subject Line',
+          hint: 'e.g. Inquiring about services',
           prefixIcon: Icons.subject_rounded,
         ),
         const SizedBox(height: 14),
         CustomTextField(
           controller: _emailBodyController,
-          label: 'Message Body',
-          hint: 'Hi, I would like to inquire about...',
+          label: 'Email Body / Message',
+          hint: 'Pre-filled message for the recipient...',
           prefixIcon: Icons.message_outlined,
-          maxLines: 4,
+          maxLines: 3,
         ),
       ],
     );
   }
 
-  // 6. Phone Form
+  // 8. Phone Form
   Widget _buildPhoneForm() {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         CustomTextField(
           controller: _phoneController,
-          label: 'Phone Number',
-          hint: '+1 555 123 4567',
+          label: 'Phone Number *',
+          hint: '+1 234 567 8900',
           prefixIcon: Icons.phone_in_talk_rounded,
           keyboardType: TextInputType.phone,
-          validator: (v) {
-            if (v == null || v.trim().isEmpty) {
-              return 'Please enter a phone number';
-            }
-            if (v.trim().length < 3) {
-              return 'Phone number is too short';
+          validator: (val) {
+            if (val == null || val.trim().isEmpty) {
+              return 'Phone number cannot be empty';
             }
             return null;
           },
@@ -1237,19 +1855,20 @@ class _CreateScreenState extends State<CreateScreen> {
     );
   }
 
-  // 7. SMS Form
+  // 9. SMS Form
   Widget _buildSmsForm() {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         CustomTextField(
           controller: _smsPhoneController,
-          label: 'Recipient Phone Number',
-          hint: '+1 555 987 6543',
-          prefixIcon: Icons.phone_rounded,
+          label: 'Recipient Phone Number *',
+          hint: '+1 234 567 8900',
+          prefixIcon: Icons.sms_outlined,
           keyboardType: TextInputType.phone,
-          validator: (v) {
-            if (v == null || v.trim().isEmpty) {
-              return 'Please enter phone number';
+          validator: (val) {
+            if (val == null || val.trim().isEmpty) {
+              return 'Recipient phone is required';
             }
             return null;
           },
@@ -1257,25 +1876,25 @@ class _CreateScreenState extends State<CreateScreen> {
         const SizedBox(height: 14),
         CustomTextField(
           controller: _smsMessageController,
-          label: 'SMS Message',
-          hint: 'Enter your message text...',
-          prefixIcon: Icons.sms_outlined,
+          label: 'Pre-filled SMS Message',
+          hint: 'Type template message...',
+          prefixIcon: Icons.message_outlined,
           maxLines: 3,
         ),
       ],
     );
   }
 
-  // 8. Location Form (Requirement 5)
+  // 10. Location Form
   Widget _buildLocationForm() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         CustomTextField(
           controller: _locationNameController,
-          label: 'Location Name (Optional)',
-          hint: 'Headquarters Office, Event Venue, Landmark',
-          prefixIcon: Icons.storefront_rounded,
+          label: 'Location Name / Place (Optional)',
+          hint: 'Times Square, New York',
+          prefixIcon: Icons.place_outlined,
         ),
         const SizedBox(height: 14),
         Row(
@@ -1283,18 +1902,14 @@ class _CreateScreenState extends State<CreateScreen> {
             Expanded(
               child: CustomTextField(
                 controller: _locationLatController,
-                label: 'Latitude (-90 to 90)',
-                hint: '37.7749',
-                prefixIcon: Icons.north_rounded,
+                label: 'Latitude *',
+                hint: '40.7580',
+                prefixIcon: Icons.explore_outlined,
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true, signed: true),
-                validator: (v) {
-                  if (v == null || v.trim().isEmpty) {
-                    return 'Required';
-                  }
-                  final lat = double.tryParse(v.trim());
-                  if (lat == null || lat < -90.0 || lat > 90.0) {
-                    return 'Must be between -90 and 90';
+                validator: (val) {
+                  if (val == null || double.tryParse(val.trim()) == null) {
+                    return 'Valid latitude is required';
                   }
                   return null;
                 },
@@ -1304,18 +1919,14 @@ class _CreateScreenState extends State<CreateScreen> {
             Expanded(
               child: CustomTextField(
                 controller: _locationLngController,
-                label: 'Longitude (-180 to 180)',
-                hint: '-122.4194',
-                prefixIcon: Icons.east_rounded,
+                label: 'Longitude *',
+                hint: '-73.9855',
+                prefixIcon: Icons.explore_outlined,
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true, signed: true),
-                validator: (v) {
-                  if (v == null || v.trim().isEmpty) {
-                    return 'Required';
-                  }
-                  final lng = double.tryParse(v.trim());
-                  if (lng == null || lng < -180.0 || lng > 180.0) {
-                    return 'Must be between -180 and 180';
+                validator: (val) {
+                  if (val == null || double.tryParse(val.trim()) == null) {
+                    return 'Valid longitude is required';
                   }
                   return null;
                 },
@@ -1323,49 +1934,19 @@ class _CreateScreenState extends State<CreateScreen> {
             ),
           ],
         ),
-        const SizedBox(height: 14),
-        // Quick Presets chips for easy testing
-        const Text(
-          'Quick Coordinate Presets:',
-          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 6),
-        Wrap(
-          spacing: 8,
-          runSpacing: 6,
-          children: [
-            _locationPresetChip('San Francisco', '37.7749', '-122.4194'),
-            _locationPresetChip('New York', '40.7128', '-74.0060'),
-            _locationPresetChip('London', '51.5074', '-0.1278'),
-            _locationPresetChip('Tokyo', '35.6762', '139.6503'),
-          ],
-        ),
       ],
     );
   }
 
-  Widget _locationPresetChip(String name, String lat, String lng) {
-    return ActionChip(
-      avatar: const Icon(Icons.pin_drop_rounded, size: 14),
-      label: Text(name, style: const TextStyle(fontSize: 11.5)),
-      onPressed: () {
-        setState(() {
-          _locationNameController.text = name;
-          _locationLatController.text = lat;
-          _locationLngController.text = lng;
-        });
-      },
-    );
-  }
-
-  // 9. Social Profile Form (Requirement 4)
+  // 11. Social Profile Form
   Widget _buildSocialForm() {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         DropdownButtonFormField<String>(
           initialValue: _socialPlatform,
           decoration: const InputDecoration(
-            labelText: 'Platform',
+            labelText: 'Social Media Platform',
             prefixIcon: Icon(Icons.share_rounded),
           ),
           items: _socialPlatforms.map((p) {
@@ -1378,13 +1959,12 @@ class _CreateScreenState extends State<CreateScreen> {
         const SizedBox(height: 14),
         CustomTextField(
           controller: _socialUrlController,
-          label: 'Username, Handle or Profile URL',
-          hint: _socialPlatform == 'Instagram'
-              ? 'username or https://instagram.com/user'
-              : 'handle or direct profile URL',
-          prefixIcon: Icons.alternate_email_rounded,
-          validator: (v) {
-            if (v == null || v.trim().isEmpty) {
+          label: 'Username or Profile URL *',
+          hint: 'username or https://...',
+          prefixIcon: Icons.person_pin_rounded,
+          keyboardType: TextInputType.url,
+          validator: (val) {
+            if (val == null || val.trim().isEmpty) {
               return 'Please enter username or profile URL';
             }
             return null;

@@ -10,6 +10,8 @@ class QrCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback? onDelete;
   final VoidCallback? onEdit;
+  final VoidCallback? onDuplicate;
+  final VoidCallback? onRegenerate;
   final VoidCallback? onFavoriteToggle;
   final bool showDelete;
   final bool isSelectionMode;
@@ -22,6 +24,8 @@ class QrCard extends StatelessWidget {
     required this.onTap,
     this.onDelete,
     this.onEdit,
+    this.onDuplicate,
+    this.onRegenerate,
     this.onFavoriteToggle,
     this.showDelete = false,
     this.isSelectionMode = false,
@@ -227,6 +231,10 @@ class QrCard extends StatelessWidget {
                       onTap();
                     } else if (value == 'edit' && onEdit != null) {
                       onEdit!();
+                    } else if (value == 'duplicate' && onDuplicate != null) {
+                      onDuplicate!();
+                    } else if (value == 'regenerate' && onRegenerate != null) {
+                      onRegenerate!();
                     } else if (value == 'favorite' && onFavoriteToggle != null) {
                       onFavoriteToggle!();
                     } else if (value == 'copy') {
@@ -251,7 +259,7 @@ class QrCard extends StatelessWidget {
                         children: [
                           Icon(Icons.visibility_outlined, size: 18),
                           SizedBox(width: 10),
-                          Text('Open Preview'),
+                          Text('Open Preview / Detail'),
                         ],
                       ),
                     ),
@@ -262,7 +270,29 @@ class QrCard extends StatelessWidget {
                           children: [
                             Icon(Icons.edit_note_rounded, size: 18),
                             SizedBox(width: 10),
-                            Text('Edit / Re-generate'),
+                            Text('Edit / Modify'),
+                          ],
+                        ),
+                      ),
+                    if (onDuplicate != null)
+                      const PopupMenuItem(
+                        value: 'duplicate',
+                        child: Row(
+                          children: [
+                            Icon(Icons.copy_all_rounded, size: 18),
+                            SizedBox(width: 10),
+                            Text('Duplicate'),
+                          ],
+                        ),
+                      ),
+                    if (onRegenerate != null)
+                      const PopupMenuItem(
+                        value: 'regenerate',
+                        child: Row(
+                          children: [
+                            Icon(Icons.refresh_rounded, size: 18),
+                            SizedBox(width: 10),
+                            Text('Regenerate'),
                           ],
                         ),
                       ),

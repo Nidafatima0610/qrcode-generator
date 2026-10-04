@@ -10,7 +10,9 @@ enum QrType {
   phone,
   sms,
   location,
-  social;
+  social,
+  businessCard,
+  businessInfo;
 
   String get label {
     switch (this) {
@@ -32,6 +34,10 @@ enum QrType {
         return 'Location / Map';
       case QrType.social:
         return 'Social Profile';
+      case QrType.businessCard:
+        return 'Business Card';
+      case QrType.businessInfo:
+        return 'Business Info';
     }
   }
 
@@ -55,6 +61,10 @@ enum QrType {
         return 'Location';
       case QrType.social:
         return 'Social';
+      case QrType.businessCard:
+        return 'Biz Card';
+      case QrType.businessInfo:
+        return 'Biz Info';
     }
   }
 
@@ -78,6 +88,10 @@ enum QrType {
         return 'Share coordinates or location map URL';
       case QrType.social:
         return 'Connect on social media or profile page';
+      case QrType.businessCard:
+        return 'Professional digital business card with rich details';
+      case QrType.businessInfo:
+        return 'Company profile, hours, contact, and address';
     }
   }
 
@@ -101,6 +115,10 @@ enum QrType {
         return Icons.location_on_rounded;
       case QrType.social:
         return Icons.share_rounded;
+      case QrType.businessCard:
+        return Icons.badge_rounded;
+      case QrType.businessInfo:
+        return Icons.storefront_rounded;
     }
   }
 
@@ -124,13 +142,22 @@ enum QrType {
         return AppColors.typeLocation;
       case QrType.social:
         return AppColors.typeSocial;
+      case QrType.businessCard:
+        return AppColors.typeBusinessCard;
+      case QrType.businessInfo:
+        return AppColors.typeBusinessInfo;
     }
   }
 
   static QrType fromString(String val) {
     final clean = val.toLowerCase().replaceAll('_', '').replaceAll(' ', '');
     return QrType.values.firstWhere(
-      (e) => e.name.toLowerCase() == clean || (clean.contains('social') && e == QrType.social) || (clean.contains('location') && e == QrType.location),
+      (e) =>
+          e.name.toLowerCase() == clean ||
+          (clean.contains('social') && e == QrType.social) ||
+          (clean.contains('location') && e == QrType.location) ||
+          (clean.contains('card') && e == QrType.businessCard) ||
+          (clean.contains('info') && e == QrType.businessInfo),
       orElse: () => QrType.text,
     );
   }

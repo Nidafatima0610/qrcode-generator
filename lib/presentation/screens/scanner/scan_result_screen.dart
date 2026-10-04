@@ -462,6 +462,74 @@ class ScanResultScreen extends StatelessWidget {
           ),
         );
 
+      case QrType.businessCard:
+        final phone = parsed.details['Phone'];
+        final website = parsed.details['Website'];
+        return SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: typeColor,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () {
+              if (phone != null && phone.isNotEmpty) {
+                QrSharingService.launchExternalUrl('tel:$phone');
+              } else if (website != null && website.isNotEmpty) {
+                QrSharingService.launchExternalUrl(website.startsWith('http') ? website : 'https://$website');
+              } else {
+                QrSharingService.copyToClipboard(
+                  context,
+                  parsed.rawPayload,
+                  message: 'Business Card copied to clipboard!',
+                );
+              }
+            },
+            icon: const Icon(Icons.badge_rounded, size: 20),
+            label: Text(
+              phone != null && phone.isNotEmpty
+                  ? 'Call ($phone)'
+                  : 'Open Business Card',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+        );
+
+      case QrType.businessInfo:
+        final phone = parsed.details['Phone'];
+        final website = parsed.details['Website'];
+        return SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: typeColor,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () {
+              if (phone != null && phone.isNotEmpty) {
+                QrSharingService.launchExternalUrl('tel:$phone');
+              } else if (website != null && website.isNotEmpty) {
+                QrSharingService.launchExternalUrl(website.startsWith('http') ? website : 'https://$website');
+              } else {
+                QrSharingService.copyToClipboard(
+                  context,
+                  parsed.rawPayload,
+                  message: 'Business Info copied to clipboard!',
+                );
+              }
+            },
+            icon: const Icon(Icons.storefront_rounded, size: 20),
+            label: Text(
+              phone != null && phone.isNotEmpty
+                  ? 'Contact Business ($phone)'
+                  : 'View Business Info',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+        );
+
       case QrType.wifi:
         final pass = parsed.details['Password'] ?? '';
         return SizedBox(

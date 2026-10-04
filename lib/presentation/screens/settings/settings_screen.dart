@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:qrcode_generator/core/constants/app_colors.dart';
 import 'package:qrcode_generator/core/services/storage_service.dart';
+import 'package:qrcode_generator/presentation/screens/presets/presets_screen.dart';
+import 'package:qrcode_generator/presentation/screens/onboarding/onboarding_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   final StorageService storageService;
@@ -78,6 +80,43 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
+  void _confirmClearFavorites(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Clear All Favorites?'),
+        content: const Text(
+          'This will unmark all favorite items. Your QR codes will remain safe in your history.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              Navigator.pop(dialogCtx);
+              await storageService.clearFavorites();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('All favorites cleared (history kept safe)'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            },
+            child: const Text('Clear Favorites'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _confirmClearScans(BuildContext context) {
     showDialog(
       context: context,
@@ -131,6 +170,9 @@ class SettingsScreen extends StatelessWidget {
             final historyCount = storageService.history.length;
             final favCount = storageService.favorites.length;
             final scanCount = storageService.scanHistory.length;
+            final defaultSize = storageService.defaultQrSize;
+            final defaultEcc = storageService.defaultErrorCorrection;
+            final defaultExport = storageService.defaultExportMode;
 
             return ListView(
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
@@ -194,6 +236,167 @@ class SettingsScreen extends StatelessWidget {
                               isSelected: currentMode == ThemeMode.dark,
                               onTap: () =>
                                   storageService.setThemeMode(ThemeMode.dark),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // 2. Default QR Preferences (Requirement)
+                _sectionHeader(context, 'Default QR Preferences'),
+                const SizedBox(height: 8),
+
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Default QR Size Slider
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Default QR Size',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                '${defaultSize.round()} px',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        Slider(
+                          value: defaultSize.clamp(160.0, 320.0),
+                          min: 160.0,
+                          max: 320.0,
+                          divisions: 8,
+                          label: '${defaultSize.round()} px',
+                          activeColor: AppColors.primary,
+                          onChanged: (val) {
+                            storageService.setDefaultQrSize(val);
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        const Divider(),
+                        const SizedBox(height: 8),
+
+                        // Default Error Correction Level
+                        const Text(
+                          'Default Error Correction',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          'Higher levels allow QRs to remain readable even when partially covered or styled.',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: isDark
+                                ? AppColors.darkTextSecondary
+                                : AppColors.lightTextSecondary,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            _eccOption(
+                              label: 'Low',
+                              sub: '7%',
+                              code: 'L',
+                              isSelected: defaultEcc == 'L',
+                              onTap: () => storageService.setDefaultErrorCorrection('L'),
+                            ),
+                            const SizedBox(width: 6),
+                            _eccOption(
+                              label: 'Med',
+                              sub: '15%',
+                              code: 'M',
+                              isSelected: defaultEcc == 'M',
+                              onTap: () => storageService.setDefaultErrorCorrection('M'),
+                            ),
+                            const SizedBox(width: 6),
+                            _eccOption(
+                              label: 'Quartile',
+                              sub: '25%',
+                              code: 'Q',
+                              isSelected: defaultEcc == 'Q',
+                              onTap: () => storageService.setDefaultErrorCorrection('Q'),
+                            ),
+                            const SizedBox(width: 6),
+                            _eccOption(
+                              label: 'High',
+                              sub: '30%',
+                              code: 'H',
+                              isSelected: defaultEcc == 'H',
+                              onTap: () => storageService.setDefaultErrorCorrection('H'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+                        const Divider(),
+                        const SizedBox(height: 8),
+
+                        // Default Export Mode
+                        const Text(
+                          'Default Export Mode',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          'Layout used when sharing or exporting generated QR graphics.',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: isDark
+                                ? AppColors.darkTextSecondary
+                                : AppColors.lightTextSecondary,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _exportModeChip(
+                              label: 'QR Only',
+                              value: 'qrOnly',
+                              current: defaultExport,
+                              onSelected: () => storageService.setDefaultExportMode('qrOnly'),
+                            ),
+                            _exportModeChip(
+                              label: 'QR + Title',
+                              value: 'titleQr',
+                              current: defaultExport,
+                              onSelected: () => storageService.setDefaultExportMode('titleQr'),
+                            ),
+                            _exportModeChip(
+                              label: 'Presentation Card',
+                              value: 'card',
+                              current: defaultExport,
+                              onSelected: () => storageService.setDefaultExportMode('card'),
                             ),
                           ],
                         ),
@@ -313,6 +516,37 @@ class SettingsScreen extends StatelessWidget {
                         leading: Container(
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
+                            color: Colors.pink.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(
+                            Icons.heart_broken_rounded,
+                            color: Colors.pink,
+                            size: 20,
+                          ),
+                        ),
+                        title: const Text(
+                          'Clear All Favorites',
+                          style: TextStyle(
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.pink,
+                          ),
+                        ),
+                        subtitle: const Text(
+                          'Unmark all favorites (QR codes remain in history)',
+                          style: TextStyle(fontSize: 12.5),
+                        ),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: favCount > 0
+                            ? () => _confirmClearFavorites(context)
+                            : null,
+                      ),
+                      const Divider(),
+                      ListTile(
+                        leading: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
                             color: Colors.orange.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(8),
                           ),
@@ -338,6 +572,43 @@ class SettingsScreen extends StatelessWidget {
                         onTap: scanCount > 0
                             ? () => _confirmClearScans(context)
                             : null,
+                      ),
+                      const Divider(),
+                      ListTile(
+                        leading: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: AppColors.accent.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(
+                            Icons.tune_rounded,
+                            color: AppColors.accent,
+                            size: 20,
+                          ),
+                        ),
+                        title: const Text(
+                          'Style Presets',
+                          style: TextStyle(
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        subtitle: Text(
+                          '${storageService.presets.length} custom style configurations',
+                          style: const TextStyle(fontSize: 12.5),
+                        ),
+                        trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => PresetsScreen(
+                                storageService: storageService,
+                              ),
+                            ),
+                          );
+                        },
                       ),
                     ],
                   ),
@@ -459,6 +730,28 @@ class SettingsScreen extends StatelessWidget {
                             height: 1.4,
                           ),
                         ),
+                        const SizedBox(height: 14),
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size(double.infinity, 44),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          icon: const Icon(Icons.school_outlined, size: 18),
+                          label: const Text('View App Walkthrough'),
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => OnboardingScreen(
+                                  storageService: storageService,
+                                  onFinish: () => Navigator.pop(context),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
                       ],
                     ),
                   ),
@@ -482,6 +775,73 @@ class SettingsScreen extends StatelessWidget {
               letterSpacing: 0.1,
             ),
       ),
+    );
+  }
+
+  Widget _eccOption({
+    required String label,
+    required String sub,
+    required String code,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? AppColors.primary
+                : AppColors.primary.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isSelected ? AppColors.primary : Colors.grey.shade300,
+            ),
+          ),
+          child: Column(
+            children: [
+              Text(
+                code,
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
+                  color: isSelected ? Colors.white : AppColors.primary,
+                ),
+              ),
+              Text(
+                sub,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w500,
+                  color: isSelected ? Colors.white70 : Colors.grey,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _exportModeChip({
+    required String label,
+    required String value,
+    required String current,
+    required VoidCallback onSelected,
+  }) {
+    final isSelected = value == current;
+    return ChoiceChip(
+      label: Text(label),
+      selected: isSelected,
+      selectedColor: AppColors.primary,
+      labelStyle: TextStyle(
+        fontSize: 12,
+        fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+        color: isSelected ? Colors.white : null,
+      ),
+      onSelected: (_) => onSelected(),
     );
   }
 
