@@ -8,7 +8,9 @@ enum QrType {
   contact,
   email,
   phone,
-  sms;
+  sms,
+  location,
+  social;
 
   String get label {
     switch (this) {
@@ -26,6 +28,10 @@ enum QrType {
         return 'Phone Call';
       case QrType.sms:
         return 'SMS Message';
+      case QrType.location:
+        return 'Location / Map';
+      case QrType.social:
+        return 'Social Profile';
     }
   }
 
@@ -45,6 +51,10 @@ enum QrType {
         return 'Phone';
       case QrType.sms:
         return 'SMS';
+      case QrType.location:
+        return 'Location';
+      case QrType.social:
+        return 'Social';
     }
   }
 
@@ -64,6 +74,10 @@ enum QrType {
         return 'Dial a telephone number instantly';
       case QrType.sms:
         return 'Send a text message with message template';
+      case QrType.location:
+        return 'Share coordinates or location map URL';
+      case QrType.social:
+        return 'Connect on social media or profile page';
     }
   }
 
@@ -83,6 +97,10 @@ enum QrType {
         return Icons.phone_in_talk_rounded;
       case QrType.sms:
         return Icons.sms_outlined;
+      case QrType.location:
+        return Icons.location_on_rounded;
+      case QrType.social:
+        return Icons.share_rounded;
     }
   }
 
@@ -102,12 +120,17 @@ enum QrType {
         return AppColors.typePhone;
       case QrType.sms:
         return AppColors.typeSms;
+      case QrType.location:
+        return AppColors.typeLocation;
+      case QrType.social:
+        return AppColors.typeSocial;
     }
   }
 
   static QrType fromString(String val) {
+    final clean = val.toLowerCase().replaceAll('_', '').replaceAll(' ', '');
     return QrType.values.firstWhere(
-      (e) => e.name.toLowerCase() == val.toLowerCase(),
+      (e) => e.name.toLowerCase() == clean || (clean.contains('social') && e == QrType.social) || (clean.contains('location') && e == QrType.location),
       orElse: () => QrType.text,
     );
   }

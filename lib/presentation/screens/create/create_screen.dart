@@ -7,16 +7,19 @@ import 'package:qrcode_generator/core/models/qr_type.dart';
 import 'package:qrcode_generator/core/services/qr_payload_builder.dart';
 import 'package:qrcode_generator/core/services/storage_service.dart';
 import 'package:qrcode_generator/presentation/widgets/custom_text_field.dart';
+import 'package:qrcode_generator/presentation/widgets/qr_render_view.dart';
 import 'package:qrcode_generator/presentation/screens/preview/qr_preview_screen.dart';
 
 class CreateScreen extends StatefulWidget {
   final StorageService storageService;
   final QrType initialType;
+  final Map<String, dynamic>? initialValues;
 
   const CreateScreen({
     super.key,
     required this.storageService,
     this.initialType = QrType.url,
+    this.initialValues,
   });
 
   @override
@@ -30,7 +33,9 @@ class _CreateScreenState extends State<CreateScreen> {
   // Customization
   int _selectedColorPresetIndex = 0;
   String _selectedErrorCorrection = 'M';
-  final double _qrSize = 240.0;
+  double _qrSize = 240.0;
+  String _selectedEyeShape = 'square';
+  String _selectedModuleShape = 'square';
   bool _showCustomization = false;
 
   // Controllers for Text
@@ -67,10 +72,63 @@ class _CreateScreenState extends State<CreateScreen> {
   final _smsPhoneController = TextEditingController();
   final _smsMessageController = TextEditingController();
 
+  // Controllers for Location (Requirement 5)
+  final _locationNameController = TextEditingController();
+  final _locationLatController = TextEditingController();
+  final _locationLngController = TextEditingController();
+
+  // Controllers for Social Profile (Requirement 4)
+  String _socialPlatform = 'Instagram';
+  final _socialUrlController = TextEditingController();
+
+  static const List<String> _socialPlatforms = [
+    'Instagram',
+    'LinkedIn',
+    'YouTube',
+    'Twitter / X',
+    'GitHub',
+    'Facebook',
+    'TikTok',
+    'Custom Platform',
+  ];
+
   @override
   void initState() {
     super.initState();
     _selectedType = widget.initialType;
+    if (widget.initialValues != null) {
+      _applyInitialValues(widget.initialValues!);
+    }
+  }
+
+  void _applyInitialValues(Map<String, dynamic> vals) {
+    if (vals.containsKey('text')) _textController.text = vals['text'].toString();
+    if (vals.containsKey('url')) _urlController.text = vals['url'].toString();
+    if (vals.containsKey('ssid')) _wifiSsidController.text = vals['ssid'].toString();
+    if (vals.containsKey('password')) _wifiPasswordController.text = vals['password'].toString();
+    if (vals.containsKey('security')) _wifiSecurity = vals['security'].toString();
+    if (vals.containsKey('hidden')) _wifiHidden = vals['hidden'] == true;
+    if (vals.containsKey('firstName')) _contactFirstNameController.text = vals['firstName'].toString();
+    if (vals.containsKey('lastName')) _contactLastNameController.text = vals['lastName'].toString();
+    if (vals.containsKey('phone')) {
+      _contactPhoneController.text = vals['phone'].toString();
+      _phoneController.text = vals['phone'].toString();
+      _smsPhoneController.text = vals['phone'].toString();
+    }
+    if (vals.containsKey('email')) {
+      _contactEmailController.text = vals['email'].toString();
+      _emailRecipientController.text = vals['email'].toString();
+    }
+    if (vals.containsKey('company')) _contactOrgController.text = vals['company'].toString();
+    if (vals.containsKey('address')) _contactAddressController.text = vals['address'].toString();
+    if (vals.containsKey('website')) _contactWebsiteController.text = vals['website'].toString();
+    if (vals.containsKey('subject')) _emailSubjectController.text = vals['subject'].toString();
+    if (vals.containsKey('body')) _emailBodyController.text = vals['body'].toString();
+    if (vals.containsKey('message')) _smsMessageController.text = vals['message'].toString();
+    if (vals.containsKey('name')) _locationNameController.text = vals['name'].toString();
+    if (vals.containsKey('latitude')) _locationLatController.text = vals['latitude'].toString();
+    if (vals.containsKey('longitude')) _locationLngController.text = vals['longitude'].toString();
+    if (vals.containsKey('platform')) _socialPlatform = vals['platform'].toString();
   }
 
   @override
@@ -80,6 +138,10 @@ class _CreateScreenState extends State<CreateScreen> {
       setState(() {
         _selectedType = widget.initialType;
       });
+    }
+    if (widget.initialValues != null &&
+        widget.initialValues != oldWidget.initialValues) {
+      _applyInitialValues(widget.initialValues!);
     }
   }
 
@@ -102,6 +164,10 @@ class _CreateScreenState extends State<CreateScreen> {
     _phoneController.dispose();
     _smsPhoneController.dispose();
     _smsMessageController.dispose();
+    _locationNameController.dispose();
+    _locationLatController.dispose();
+    _locationLngController.dispose();
+    _socialUrlController.dispose();
     super.dispose();
   }
 
@@ -112,6 +178,25 @@ class _CreateScreenState extends State<CreateScreen> {
       backgroundColor: preset.background,
       size: _qrSize,
       errorCorrectionLevel: _selectedErrorCorrection,
+      eyeShape: _selectedEyeShape,
+      dataModuleShape: _selectedModuleShape,
+    );
+  }
+
+  void _resetCustomization() {
+    setState(() {
+      _selectedColorPresetIndex = 0;
+      _selectedErrorCorrection = 'M';
+      _qrSize = 240.0;
+      _selectedEyeShape = 'square';
+      _selectedModuleShape = 'square';
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Customization reset to default'),
+        behavior: SnackBarBehavior.floating,
+        duration: Duration(seconds: 1),
+      ),
     );
   }
 
@@ -151,6 +236,19 @@ class _CreateScreenState extends State<CreateScreen> {
           phone: _smsPhoneController.text,
           message: _smsMessageController.text,
         );
+      case QrType.location:
+        final lat = double.tryParse(_locationLatController.text.trim()) ?? 0.0;
+        final lng = double.tryParse(_locationLngController.text.trim()) ?? 0.0;
+        return QrPayloadBuilder.buildLocation(
+          latitude: lat,
+          longitude: lng,
+          name: _locationNameController.text.trim(),
+        );
+      case QrType.social:
+        return QrPayloadBuilder.buildSocial(
+          platform: _socialPlatform,
+          usernameOrUrl: _socialUrlController.text.trim(),
+        );
     }
   }
 
@@ -174,6 +272,12 @@ class _CreateScreenState extends State<CreateScreen> {
         return 'Call ${_phoneController.text.trim()}';
       case QrType.sms:
         return 'SMS to ${_smsPhoneController.text.trim()}';
+      case QrType.location:
+        final name = _locationNameController.text.trim();
+        if (name.isNotEmpty) return name;
+        return 'Location: ${_locationLatController.text.trim()}, ${_locationLngController.text.trim()}';
+      case QrType.social:
+        return '$_socialPlatform Profile';
     }
   }
 
@@ -190,11 +294,17 @@ class _CreateScreenState extends State<CreateScreen> {
             ? _contactPhoneController.text.trim()
             : _contactEmailController.text.trim();
       case QrType.email:
-        return _emailSubjectController.text.trim();
+        return _emailSubjectController.text.trim().isNotEmpty
+            ? _emailSubjectController.text.trim()
+            : 'Email compose';
       case QrType.phone:
         return 'Telephone Number';
       case QrType.sms:
         return _smsMessageController.text.trim();
+      case QrType.location:
+        return 'Lat: ${_locationLatController.text.trim()}, Lng: ${_locationLngController.text.trim()}';
+      case QrType.social:
+        return _socialUrlController.text.trim();
     }
   }
 
@@ -222,7 +332,7 @@ class _CreateScreenState extends State<CreateScreen> {
 
     if (!mounted) return;
 
-    // Navigate to polished preview screen
+    // Navigate to preview screen
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -324,10 +434,8 @@ class _CreateScreenState extends State<CreateScreen> {
                             Text(
                               type.shortName,
                               textAlign: TextAlign.center,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                fontSize: 11.5,
+                                fontSize: 11,
                                 fontWeight: isSelected
                                     ? FontWeight.w700
                                     : FontWeight.w500,
@@ -345,7 +453,7 @@ class _CreateScreenState extends State<CreateScreen> {
                   },
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 14),
 
               // Description banner of selected type
               Container(
@@ -383,11 +491,11 @@ class _CreateScreenState extends State<CreateScreen> {
               ),
               const SizedBox(height: 20),
 
-              // 2. Dynamic Input Form
+              // 2. Dynamic Input Form for selected type
               _buildTypeForm(),
               const SizedBox(height: 24),
 
-              // 3. QR Customization Accordion
+              // 3. Advanced QR Customization Accordion (Requirement 6)
               Card(
                 child: ExpansionTile(
                   initiallyExpanded: _showCustomization,
@@ -410,11 +518,11 @@ class _CreateScreenState extends State<CreateScreen> {
                     ),
                   ),
                   title: const Text(
-                    'QR Style & Customization',
+                    'Advanced Customization',
                     style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700),
                   ),
                   subtitle: Text(
-                    'Preset colors, error correction, & size',
+                    'Colors, module & eye style, size, resilience',
                     style: TextStyle(
                       fontSize: 12,
                       color: isDark
@@ -429,13 +537,71 @@ class _CreateScreenState extends State<CreateScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Divider(),
+                          const SizedBox(height: 8),
+
+                          // Live Preview Inside Customization Panel
+                          Center(
+                            child: Container(
+                              margin: const EdgeInsets.symmetric(vertical: 8),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? AppColors.darkSurface
+                                    : Colors.grey.shade100,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: isDark
+                                      ? AppColors.darkBorder
+                                      : AppColors.lightBorder,
+                                ),
+                              ),
+                              child: Column(
+                                children: [
+                                  QrRenderView(
+                                    data: 'https://qrstudiopro.preview',
+                                    customization: _currentCustomization,
+                                    size: 130,
+                                    showContainer: false,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Live Customization Preview',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: isDark
+                                          ? AppColors.darkTextMuted
+                                          : AppColors.lightTextMuted,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                           const SizedBox(height: 12),
 
                           // Color Palette Presets
-                          const Text(
-                            'Color Palette',
-                            style: TextStyle(
-                                fontSize: 13, fontWeight: FontWeight.w600),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'Color Palette',
+                                style: TextStyle(
+                                    fontSize: 13, fontWeight: FontWeight.w600),
+                              ),
+                              TextButton(
+                                style: TextButton.styleFrom(
+                                  padding: EdgeInsets.zero,
+                                  minimumSize: const Size(60, 24),
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                onPressed: _resetCustomization,
+                                child: const Text(
+                                  'Reset Customization',
+                                  style: TextStyle(fontSize: 11.5),
+                                ),
+                              ),
+                            ],
                           ),
                           const SizedBox(height: 8),
                           SizedBox(
@@ -515,15 +681,124 @@ class _CreateScreenState extends State<CreateScreen> {
                           ),
                           const SizedBox(height: 16),
 
+                          // Shapes (Module and Eye corner style)
+                          Row(
+                            children: [
+                              // Module Dots Style
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Module Style',
+                                      style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Row(
+                                      children: [
+                                        _shapeChoiceChip(
+                                          label: 'Square',
+                                          icon: Icons.crop_square_rounded,
+                                          isSelected:
+                                              _selectedModuleShape == 'square',
+                                          onTap: () => setState(() =>
+                                              _selectedModuleShape = 'square'),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        _shapeChoiceChip(
+                                          label: 'Circle',
+                                          icon: Icons.circle_outlined,
+                                          isSelected:
+                                              _selectedModuleShape == 'circle',
+                                          onTap: () => setState(() =>
+                                              _selectedModuleShape = 'circle'),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+
+                              // Eye Corner Style
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Corner Style',
+                                      style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Row(
+                                      children: [
+                                        _shapeChoiceChip(
+                                          label: 'Square',
+                                          icon: Icons.crop_square_rounded,
+                                          isSelected:
+                                              _selectedEyeShape == 'square',
+                                          onTap: () => setState(() =>
+                                              _selectedEyeShape = 'square'),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        _shapeChoiceChip(
+                                          label: 'Circle',
+                                          icon: Icons.circle_outlined,
+                                          isSelected:
+                                              _selectedEyeShape == 'circle',
+                                          onTap: () => setState(
+                                              () => _selectedEyeShape = 'circle'),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+
+                          // QR Size Slider
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'QR Code Size',
+                                style: TextStyle(
+                                    fontSize: 13, fontWeight: FontWeight.w600),
+                              ),
+                              Text(
+                                '${_qrSize.toInt()} px',
+                                style: const TextStyle(
+                                    fontSize: 12, fontWeight: FontWeight.w700),
+                              ),
+                            ],
+                          ),
+                          Slider(
+                            value: _qrSize,
+                            min: 160.0,
+                            max: 320.0,
+                            divisions: 8,
+                            activeColor: AppColors.primary,
+                            onChanged: (val) {
+                              setState(() => _qrSize = val);
+                            },
+                          ),
+                          const SizedBox(height: 8),
+
                           // Error Correction Level
                           const Text(
-                            'Error Correction Level',
+                            'Error Correction Resilience',
                             style: TextStyle(
                                 fontSize: 13, fontWeight: FontWeight.w600),
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'Higher levels preserve readability even if QR is slightly damaged or printed on uneven surfaces.',
+                            'Higher resilience preserves scannability even when printed on damaged or curved surfaces.',
                             style: TextStyle(
                               fontSize: 11.5,
                               color: isDark
@@ -558,6 +833,53 @@ class _CreateScreenState extends State<CreateScreen> {
                 label: const Text('Generate & Preview QR'),
               ),
               const SizedBox(height: 30),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _shapeChoiceChip({
+    required String label,
+    required IconData icon,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? AppColors.primary
+                : Theme.of(context).cardColor,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isSelected
+                  ? AppColors.primary
+                  : Theme.of(context).dividerColor,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: isSelected ? Colors.white : null,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                  color: isSelected ? Colors.white : null,
+                ),
+              ),
             ],
           ),
         ),
@@ -626,6 +948,10 @@ class _CreateScreenState extends State<CreateScreen> {
         return _buildPhoneForm();
       case QrType.sms:
         return _buildSmsForm();
+      case QrType.location:
+        return _buildLocationForm();
+      case QrType.social:
+        return _buildSocialForm();
     }
   }
 
@@ -656,7 +982,7 @@ class _CreateScreenState extends State<CreateScreen> {
       children: [
         CustomTextField(
           controller: _urlController,
-          label: 'Website Address',
+          label: 'Website URL',
           hint: 'https://example.com',
           prefixIcon: Icons.link_rounded,
           keyboardType: TextInputType.url,
@@ -664,58 +990,14 @@ class _CreateScreenState extends State<CreateScreen> {
             if (v == null || v.trim().isEmpty) {
               return 'Please enter a URL';
             }
-            final trimmed = v.trim();
+            final trimmed = v.trim().toLowerCase();
             if (trimmed == 'https://' || trimmed == 'http://') {
-              return 'Please enter a valid domain address';
+              return 'Please enter a complete web address';
             }
             return null;
           },
         ),
-        const SizedBox(height: 10),
-        // Quick URL Domain Extension chips
-        Row(
-          children: [
-            const Text(
-              'Quick Add:',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-            ),
-            const SizedBox(width: 8),
-            _domainChip('.com'),
-            const SizedBox(width: 6),
-            _domainChip('.org'),
-            const SizedBox(width: 6),
-            _domainChip('.io'),
-            const SizedBox(width: 6),
-            _domainChip('.app'),
-          ],
-        ),
       ],
-    );
-  }
-
-  Widget _domainChip(String extension) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(6),
-      onTap: () {
-        setState(() {
-          _urlController.text = '${_urlController.text}$extension';
-        });
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: AppColors.primary.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Text(
-          extension,
-          style: const TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-            color: AppColors.primary,
-          ),
-        ),
-      ),
     );
   }
 
@@ -728,7 +1010,7 @@ class _CreateScreenState extends State<CreateScreen> {
         CustomTextField(
           controller: _wifiSsidController,
           label: 'Network Name (SSID)',
-          hint: 'e.g. Home_WiFi_5G',
+          hint: 'MyHomeWiFi',
           prefixIcon: Icons.wifi_rounded,
           validator: (v) {
             if (v == null || v.trim().isEmpty) {
@@ -738,66 +1020,47 @@ class _CreateScreenState extends State<CreateScreen> {
           },
         ),
         const SizedBox(height: 14),
-
-        // Security Selector
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Security Type',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+        CustomTextField(
+          controller: _wifiPasswordController,
+          label: 'Wi-Fi Password',
+          hint: 'Network password',
+          prefixIcon: Icons.lock_outline_rounded,
+          obscureText: _wifiObscurePass,
+          suffixIcon: IconButton(
+            icon: Icon(
+              _wifiObscurePass
+                  ? Icons.visibility_outlined
+                  : Icons.visibility_off_outlined,
+              size: 20,
             ),
-            const SizedBox(height: 6),
-            DropdownButtonFormField<String>(
-              initialValue: _wifiSecurity,
-              decoration: const InputDecoration(
-                prefixIcon: Icon(Icons.security_rounded, size: 20),
+            onPressed: () {
+              setState(() => _wifiObscurePass = !_wifiObscurePass);
+            },
+          ),
+        ),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            Expanded(
+              child: DropdownButtonFormField<String>(
+                initialValue: _wifiSecurity,
+                decoration: const InputDecoration(
+                  labelText: 'Security Type',
+                  prefixIcon: Icon(Icons.security_rounded),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'WPA', child: Text('WPA/WPA2/WPA3')),
+                  DropdownMenuItem(value: 'WEP', child: Text('WEP')),
+                  DropdownMenuItem(value: 'nopass', child: Text('No Password (Open)')),
+                ],
+                onChanged: (val) {
+                  if (val != null) setState(() => _wifiSecurity = val);
+                },
               ),
-              items: const [
-                DropdownMenuItem(value: 'WPA', child: Text('WPA / WPA2 / WPA3 (Recommended)')),
-                DropdownMenuItem(value: 'WEP', child: Text('WEP')),
-                DropdownMenuItem(value: 'nopass', child: Text('None (Open Network)')),
-              ],
-              onChanged: (val) {
-                if (val != null) {
-                  setState(() => _wifiSecurity = val);
-                }
-              },
             ),
           ],
         ),
-
-        if (_wifiSecurity != 'nopass') ...[
-          const SizedBox(height: 14),
-          CustomTextField(
-            controller: _wifiPasswordController,
-            label: 'Network Password',
-            hint: 'Enter Wi-Fi password',
-            prefixIcon: Icons.lock_outline_rounded,
-            obscureText: _wifiObscurePass,
-            suffixIcon: IconButton(
-              icon: Icon(
-                _wifiObscurePass
-                    ? Icons.visibility_outlined
-                    : Icons.visibility_off_outlined,
-                size: 20,
-              ),
-              onPressed: () =>
-                  setState(() => _wifiObscurePass = !_wifiObscurePass),
-            ),
-            validator: (v) {
-              if (_wifiSecurity != 'nopass' && (v == null || v.isEmpty)) {
-                return 'Password is required for secured network';
-              }
-              return null;
-            },
-          ),
-        ],
-
         const SizedBox(height: 14),
-        // Hidden Network Switch
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
           decoration: BoxDecoration(
@@ -998,6 +1261,134 @@ class _CreateScreenState extends State<CreateScreen> {
           hint: 'Enter your message text...',
           prefixIcon: Icons.sms_outlined,
           maxLines: 3,
+        ),
+      ],
+    );
+  }
+
+  // 8. Location Form (Requirement 5)
+  Widget _buildLocationForm() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CustomTextField(
+          controller: _locationNameController,
+          label: 'Location Name (Optional)',
+          hint: 'Headquarters Office, Event Venue, Landmark',
+          prefixIcon: Icons.storefront_rounded,
+        ),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            Expanded(
+              child: CustomTextField(
+                controller: _locationLatController,
+                label: 'Latitude (-90 to 90)',
+                hint: '37.7749',
+                prefixIcon: Icons.north_rounded,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true, signed: true),
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty) {
+                    return 'Required';
+                  }
+                  final lat = double.tryParse(v.trim());
+                  if (lat == null || lat < -90.0 || lat > 90.0) {
+                    return 'Must be between -90 and 90';
+                  }
+                  return null;
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: CustomTextField(
+                controller: _locationLngController,
+                label: 'Longitude (-180 to 180)',
+                hint: '-122.4194',
+                prefixIcon: Icons.east_rounded,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true, signed: true),
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty) {
+                    return 'Required';
+                  }
+                  final lng = double.tryParse(v.trim());
+                  if (lng == null || lng < -180.0 || lng > 180.0) {
+                    return 'Must be between -180 and 180';
+                  }
+                  return null;
+                },
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        // Quick Presets chips for easy testing
+        const Text(
+          'Quick Coordinate Presets:',
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 6),
+        Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          children: [
+            _locationPresetChip('San Francisco', '37.7749', '-122.4194'),
+            _locationPresetChip('New York', '40.7128', '-74.0060'),
+            _locationPresetChip('London', '51.5074', '-0.1278'),
+            _locationPresetChip('Tokyo', '35.6762', '139.6503'),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _locationPresetChip(String name, String lat, String lng) {
+    return ActionChip(
+      avatar: const Icon(Icons.pin_drop_rounded, size: 14),
+      label: Text(name, style: const TextStyle(fontSize: 11.5)),
+      onPressed: () {
+        setState(() {
+          _locationNameController.text = name;
+          _locationLatController.text = lat;
+          _locationLngController.text = lng;
+        });
+      },
+    );
+  }
+
+  // 9. Social Profile Form (Requirement 4)
+  Widget _buildSocialForm() {
+    return Column(
+      children: [
+        DropdownButtonFormField<String>(
+          initialValue: _socialPlatform,
+          decoration: const InputDecoration(
+            labelText: 'Platform',
+            prefixIcon: Icon(Icons.share_rounded),
+          ),
+          items: _socialPlatforms.map((p) {
+            return DropdownMenuItem(value: p, child: Text(p));
+          }).toList(),
+          onChanged: (val) {
+            if (val != null) setState(() => _socialPlatform = val);
+          },
+        ),
+        const SizedBox(height: 14),
+        CustomTextField(
+          controller: _socialUrlController,
+          label: 'Username, Handle or Profile URL',
+          hint: _socialPlatform == 'Instagram'
+              ? 'username or https://instagram.com/user'
+              : 'handle or direct profile URL',
+          prefixIcon: Icons.alternate_email_rounded,
+          validator: (v) {
+            if (v == null || v.trim().isEmpty) {
+              return 'Please enter username or profile URL';
+            }
+            return null;
+          },
         ),
       ],
     );

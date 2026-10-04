@@ -22,6 +22,8 @@ class AppColors {
   static const Color typeEmail = Color(0xFFF59E0B); // Amber
   static const Color typePhone = Color(0xFF06B6D4); // Cyan
   static const Color typeSms = Color(0xFFEC4899); // Pink
+  static const Color typeLocation = Color(0xFFF43F5E); // Rose
+  static const Color typeSocial = Color(0xFF8B5CF6); // Purple
 
   // Light Theme Surfaces
   static const Color lightBg = Color(0xFFF8FAFC);
@@ -72,6 +74,11 @@ class AppColors {
       name: 'Sunset Ruby',
       foreground: Color(0xFF881337),
       background: Color(0xFFFFF1F2),
+    ),
+    QrColorPreset(
+      name: 'Amber Glow',
+      foreground: Color(0xFF78350F),
+      background: Color(0xFFFFFBEB),
     ),
     QrColorPreset(
       name: 'Dark Inverted',

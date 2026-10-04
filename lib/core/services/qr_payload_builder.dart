@@ -106,6 +106,50 @@ class QrPayloadBuilder {
     return 'smsto:${phone.trim()}:${message.trim()}';
   }
 
+  /// Build payload for Location (Google Maps URL & Geo payload)
+  static String buildLocation({
+    required double latitude,
+    required double longitude,
+    String? name,
+  }) {
+    if (name != null && name.trim().isNotEmpty) {
+      return 'https://maps.google.com/?q=${Uri.encodeComponent(name.trim())}&ll=$latitude,$longitude';
+    }
+    return 'https://maps.google.com/?q=$latitude,$longitude';
+  }
+
+  /// Build payload for Social Profile
+  static String buildSocial({
+    required String platform,
+    required String usernameOrUrl,
+  }) {
+    final clean = usernameOrUrl.trim();
+    if (clean.toLowerCase().startsWith('http://') || clean.toLowerCase().startsWith('https://')) {
+      return clean;
+    }
+    final handle = clean.replaceAll('@', '');
+    switch (platform.toLowerCase()) {
+      case 'instagram':
+        return 'https://instagram.com/$handle';
+      case 'linkedin':
+        return 'https://linkedin.com/in/$handle';
+      case 'twitter':
+      case 'x':
+      case 'twitter/x':
+        return 'https://x.com/$handle';
+      case 'github':
+        return 'https://github.com/$handle';
+      case 'youtube':
+        return 'https://youtube.com/@$handle';
+      case 'facebook':
+        return 'https://facebook.com/$handle';
+      case 'tiktok':
+        return 'https://tiktok.com/@$handle';
+      default:
+        return 'https://$clean';
+    }
+  }
+
   /// Parse any scanned or stored raw payload into structured data
   static ParsedQrContent parse(String raw) {
     final trimmed = raw.trim();
@@ -168,7 +212,82 @@ class QrPayloadBuilder {
       );
     }
 
-    // 3. URL
+    // 3. Location (geo: URI or Google/Apple Maps URL)
+    if (trimmed.startsWith('geo:') ||
+        trimmed.contains('maps.google.com') ||
+        trimmed.contains('google.com/maps') ||
+        trimmed.contains('maps.apple.com')) {
+      final details = <String, String>{};
+      String title = 'Location / Map';
+      String subtitle = trimmed;
+      String actionUrl = trimmed;
+
+      if (trimmed.startsWith('geo:')) {
+        final geoPart = trimmed.substring(4);
+        final parts = geoPart.split('?');
+        final coords = parts[0].split(',');
+        if (coords.length >= 2) {
+          details['Latitude'] = coords[0].trim();
+          details['Longitude'] = coords[1].trim();
+          title = 'Map Coordinates';
+          subtitle = 'Lat: ${coords[0]}, Lng: ${coords[1]}';
+          actionUrl = 'https://maps.google.com/?q=${coords[0]},${coords[1]}';
+        }
+        if (parts.length > 1) {
+          details['Query'] = Uri.decodeComponent(parts[1]);
+        }
+      } else {
+        details['Map URL'] = trimmed;
+        final qMatch = RegExp(r'[?&]q=([^&]+)').firstMatch(trimmed);
+        if (qMatch != null) {
+          final queryVal = Uri.decodeComponent(qMatch.group(1)!);
+          title = queryVal;
+          subtitle = 'Google Maps Location';
+          details['Location'] = queryVal;
+        }
+      }
+
+      return ParsedQrContent(
+        type: QrType.location,
+        displayTitle: title,
+        displaySubtitle: subtitle,
+        rawPayload: trimmed,
+        actionUrl: actionUrl,
+        details: details,
+      );
+    }
+
+    // 4. Social Profile URL
+    final lower = trimmed.toLowerCase();
+    if (lower.contains('instagram.com/') ||
+        lower.contains('linkedin.com/') ||
+        lower.contains('twitter.com/') ||
+        lower.contains('x.com/') ||
+        lower.contains('github.com/') ||
+        lower.contains('youtube.com/') ||
+        lower.contains('tiktok.com/') ||
+        lower.contains('facebook.com/')) {
+      String platform = 'Social Profile';
+      if (lower.contains('instagram.com/')) platform = 'Instagram';
+      if (lower.contains('linkedin.com/')) platform = 'LinkedIn';
+      if (lower.contains('twitter.com/') || lower.contains('x.com/')) platform = 'X (Twitter)';
+      if (lower.contains('github.com/')) platform = 'GitHub';
+      if (lower.contains('youtube.com/')) platform = 'YouTube';
+      if (lower.contains('tiktok.com/')) platform = 'TikTok';
+      if (lower.contains('facebook.com/')) platform = 'Facebook';
+
+      final url = buildUrl(trimmed);
+      return ParsedQrContent(
+        type: QrType.social,
+        displayTitle: '$platform Profile',
+        displaySubtitle: url,
+        rawPayload: url,
+        actionUrl: url,
+        details: {'Platform': platform, 'Profile URL': url},
+      );
+    }
+
+    // 5. Standard Website URL
     if (trimmed.startsWith('http://') ||
         trimmed.startsWith('https://') ||
         (trimmed.contains('.') &&
@@ -180,7 +299,7 @@ class QrPayloadBuilder {
                 trimmed.endsWith('.app') ||
                 trimmed.endsWith('.dev')))) {
       final url = buildUrl(trimmed);
-      Uri? parsedUri = Uri.tryParse(url);
+      final parsedUri = Uri.tryParse(url);
       final domain = parsedUri?.host.isNotEmpty == true ? parsedUri!.host : url;
 
       return ParsedQrContent(
@@ -193,7 +312,7 @@ class QrPayloadBuilder {
       );
     }
 
-    // 4. Email
+    // 6. Email
     if (trimmed.startsWith('mailto:') || trimmed.startsWith('MATMSG:')) {
       final details = <String, String>{};
       String email = '';
@@ -230,7 +349,7 @@ class QrPayloadBuilder {
       );
     }
 
-    // 5. Phone Call
+    // 7. Phone Call
     if (trimmed.startsWith('tel:') || trimmed.startsWith('TEL:')) {
       final phone = trimmed.substring(4);
       return ParsedQrContent(
@@ -243,7 +362,7 @@ class QrPayloadBuilder {
       );
     }
 
-    // 6. SMS
+    // 8. SMS
     if (trimmed.toLowerCase().startsWith('smsto:')) {
       final parts = trimmed.substring(6).split(':');
       final phone = parts.isNotEmpty ? parts[0] : '';
@@ -262,7 +381,7 @@ class QrPayloadBuilder {
       );
     }
 
-    // Default: Plain Text
+    // 9. Default: Plain Text
     return ParsedQrContent(
       type: QrType.text,
       displayTitle: trimmed.length > 30 ? '${trimmed.substring(0, 30)}...' : trimmed,

@@ -2,11 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:uuid/uuid.dart';
 import 'package:qrcode_generator/core/constants/app_colors.dart';
-import 'package:qrcode_generator/core/models/qr_item.dart';
-import 'package:qrcode_generator/core/models/qr_type.dart';
+import 'package:qrcode_generator/core/models/scan_item.dart';
 import 'package:qrcode_generator/core/services/qr_payload_builder.dart';
-import 'package:qrcode_generator/core/services/qr_sharing_service.dart';
 import 'package:qrcode_generator/core/services/storage_service.dart';
+import 'package:qrcode_generator/presentation/screens/scanner/scan_result_screen.dart';
 
 class ScannerScreen extends StatefulWidget {
   final StorageService storageService;
@@ -41,7 +40,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
     super.dispose();
   }
 
-  void _onDetect(BarcodeCapture capture) {
+  void _onDetect(BarcodeCapture capture) async {
     if (_isProcessing) return;
 
     final List<Barcode> barcodes = capture.barcodes;
@@ -51,232 +50,44 @@ class _ScannerScreenState extends State<ScannerScreen> {
     if (rawValue == null || rawValue.trim().isEmpty) return;
 
     setState(() => _isProcessing = true);
-    _showResultBottomSheet(rawValue.trim());
-  }
 
-  void _showResultBottomSheet(String rawValue) {
-    final parsed = QrPayloadBuilder.parse(rawValue);
+    final cleanValue = rawValue.trim();
+    final parsed = QrPayloadBuilder.parse(cleanValue);
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (bottomSheetCtx) {
-        final isDark = Theme.of(bottomSheetCtx).brightness == Brightness.dark;
-        final typeColor = parsed.type.color;
-        final isUrl = parsed.type == QrType.url ||
-            parsed.actionUrl != null ||
-            rawValue.startsWith('http://') ||
-            rawValue.startsWith('https://');
+    final scanRecord = ScanItem(
+      id: const Uuid().v4(),
+      rawContent: cleanValue,
+      detectedType: parsed.type,
+      title: parsed.displayTitle,
+      subtitle: parsed.displaySubtitle,
+      scannedAt: DateTime.now(),
+      details: parsed.details,
+    );
 
-        return Container(
-          decoration: BoxDecoration(
-            color: isDark ? AppColors.darkSurface : Colors.white,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          padding: EdgeInsets.fromLTRB(
-            20,
-            12,
-            20,
-            MediaQuery.of(bottomSheetCtx).viewInsets.bottom + 24,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Drag handle
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
+    // Save to persistent scan history
+    await widget.storageService.saveScanItem(scanRecord);
 
-              // Type Badge & Title Row
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: typeColor.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(parsed.type.icon, size: 16, color: typeColor),
-                        const SizedBox(width: 6),
-                        Text(
-                          parsed.type.label,
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w700,
-                            color: typeColor,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded, size: 20),
-                    onPressed: () => Navigator.pop(bottomSheetCtx),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
+    if (!mounted) return;
 
-              // Detected Title
-              Text(
-                parsed.displayTitle,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.3,
-                ),
-              ),
-              const SizedBox(height: 4),
+    // Navigate to rich Scan Result screen
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ScanResultScreen(
+          scanItem: scanRecord,
+          storageService: widget.storageService,
+          onScanAgain: () {
+            // Callback to re-enable scanning
+          },
+        ),
+      ),
+    );
 
-              // Summary
-              Text(
-                parsed.displaySubtitle,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: isDark
-                      ? AppColors.darkTextSecondary
-                      : AppColors.lightTextSecondary,
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Content Box
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: isDark
-                      ? Colors.black.withValues(alpha: 0.3)
-                      : Colors.grey.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
-                  ),
-                ),
-                child: SelectableText(
-                  rawValue,
-                  style: const TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 12.5,
-                    height: 1.4,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              // Action buttons
-              if (isUrl) ...[
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      final targetUrl = parsed.actionUrl ?? rawValue;
-                      QrSharingService.launchExternalUrl(targetUrl);
-                    },
-                    icon: const Icon(Icons.open_in_browser_rounded, size: 20),
-                    label: const Text('Open URL in Browser'),
-                  ),
-                ),
-                const SizedBox(height: 10),
-              ] else if (parsed.actionUrl != null) ...[
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      QrSharingService.launchExternalUrl(parsed.actionUrl!);
-                    },
-                    icon: Icon(parsed.type.icon, size: 20),
-                    label: Text('Open ${parsed.type.shortName}'),
-                  ),
-                ),
-                const SizedBox(height: 10),
-              ],
-
-              Row(
-                children: [
-                  // Copy Button
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        QrSharingService.copyToClipboard(
-                          context,
-                          rawValue,
-                          message: 'Scanned content copied to clipboard!',
-                        );
-                      },
-                      icon: const Icon(Icons.copy_rounded, size: 18),
-                      label: const Text('Copy'),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  // Save to History Button
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () async {
-                        final item = QrItem(
-                          id: const Uuid().v4(),
-                          type: parsed.type,
-                          title: parsed.displayTitle,
-                          subtitle: parsed.displaySubtitle,
-                          rawPayload: rawValue,
-                          createdAt: DateTime.now(),
-                        );
-                        await widget.storageService.saveItem(item);
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Saved to your QR history!'),
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                        }
-                      },
-                      icon: const Icon(Icons.bookmark_add_outlined, size: 18),
-                      label: const Text('Save'),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-
-              // Scan Another Button
-              SizedBox(
-                width: double.infinity,
-                child: TextButton.icon(
-                  onPressed: () {
-                    Navigator.pop(bottomSheetCtx);
-                  },
-                  icon: const Icon(Icons.refresh_rounded, size: 20),
-                  label: const Text('Scan Another Code'),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    ).whenComplete(() {
-      // Small delay before re-enabling scanning to prevent accidental re-triggers
-      Future.delayed(const Duration(milliseconds: 600), () {
-        if (mounted) {
-          setState(() => _isProcessing = false);
-        }
-      });
-    });
+    // Delay before re-enabling scanning to prevent duplicate scans
+    await Future.delayed(const Duration(milliseconds: 700));
+    if (mounted) {
+      setState(() => _isProcessing = false);
+    }
   }
 
   @override
@@ -346,7 +157,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Please make sure camera permissions are enabled in your device settings to scan QR codes.\n${error.errorCode.name}',
+                        'Please verify camera permissions are granted in settings to scan QR codes.\n${error.errorCode.name}',
                         textAlign: TextAlign.center,
                         style: const TextStyle(
                           color: Colors.white70,
@@ -372,10 +183,10 @@ class _ScannerScreenState extends State<ScannerScreen> {
             },
           ),
 
-          // 2. Beautiful Reticle Overlay
+          // 2. Reticle Overlay
           _buildReticleOverlay(),
 
-          // 3. Bottom instruction badge
+          // 3. Status Badge at Bottom
           Positioned(
             bottom: 40,
             left: 20,
@@ -385,19 +196,26 @@ class _ScannerScreenState extends State<ScannerScreen> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.65),
+                  color: Colors.black.withValues(alpha: 0.7),
                   borderRadius: BorderRadius.circular(30),
                   border: Border.all(color: Colors.white24, width: 1),
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.center_focus_strong_rounded,
-                        color: Colors.white, size: 18),
-                    SizedBox(width: 8),
+                    Icon(
+                      _isProcessing
+                          ? Icons.hourglass_top_rounded
+                          : Icons.center_focus_strong_rounded,
+                      color: _isProcessing ? AppColors.warning : Colors.white,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
                     Text(
-                      'Align QR code within frame to scan',
-                      style: TextStyle(
+                      _isProcessing
+                          ? 'Processing code...'
+                          : 'Align QR code within frame to scan',
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 13,
                         fontWeight: FontWeight.w500,
@@ -421,7 +239,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
         return Stack(
           alignment: Alignment.center,
           children: [
-            // Darkened vignette background
+            // Darkened vignette background with cutout
             ColorFiltered(
               colorFilter: ColorFilter.mode(
                 Colors.black.withValues(alpha: 0.5),
@@ -457,7 +275,9 @@ class _ScannerScreenState extends State<ScannerScreen> {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(24),
                 border: Border.all(
-                  color: AppColors.primaryLight,
+                  color: _isProcessing
+                      ? AppColors.warning
+                      : AppColors.primaryLight,
                   width: 2.5,
                 ),
               ),

@@ -22,32 +22,49 @@ class MainShellScreen extends StatefulWidget {
 class _MainShellScreenState extends State<MainShellScreen> {
   int _currentIndex = 0;
   QrType _createInitialType = QrType.url;
+  int _historySubTab = 0;
+  Map<String, dynamic>? _createInitialValues;
+  int _createScreenKeySeed = 0;
 
-  void _onNavigateToTab(int index, [QrType? initialType]) {
+  void _onNavigateToTab(
+    int index, [
+    QrType? initialType,
+    int? historySubTab,
+    Map<String, dynamic>? initialValues,
+  ]) {
     setState(() {
       _currentIndex = index;
       if (initialType != null) {
         _createInitialType = initialType;
       }
+      if (historySubTab != null) {
+        _historySubTab = historySubTab;
+      }
+      if (initialValues != null) {
+        _createInitialValues = initialValues;
+      }
+      _createScreenKeySeed++;
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    // 5 real functional screens
     final screens = [
       HomeScreen(
         storageService: widget.storageService,
         onNavigateToTab: _onNavigateToTab,
       ),
       CreateScreen(
-        key: ValueKey(_createInitialType),
+        key: ValueKey('create_${_createInitialType.name}_$_createScreenKeySeed'),
         storageService: widget.storageService,
         initialType: _createInitialType,
+        initialValues: _createInitialValues,
       ),
       HistoryScreen(
+        key: ValueKey('history_$_historySubTab'),
         storageService: widget.storageService,
         onNavigateToTab: _onNavigateToTab,
+        initialSubTab: _historySubTab,
       ),
       ScannerScreen(
         storageService: widget.storageService,

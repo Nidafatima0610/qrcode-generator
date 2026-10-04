@@ -11,12 +11,80 @@ class SettingsScreen extends StatelessWidget {
   });
 
   void _confirmClearHistory(BuildContext context) {
+    bool keepFavorites = true;
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Clear QR Generation History?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'This will remove generated QR codes from this device.',
+              ),
+              const SizedBox(height: 16),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: keepFavorites,
+                activeColor: AppColors.primary,
+                title: const Text(
+                  'Keep favorite QR codes safe',
+                  style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+                ),
+                subtitle: const Text(
+                  'Favorite items will remain in your favorites',
+                  style: TextStyle(fontSize: 11.5),
+                ),
+                onChanged: (val) {
+                  setDialogState(() => keepFavorites = val ?? true);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.error,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () async {
+                Navigator.pop(dialogCtx);
+                await storageService.clearHistory(
+                  preserveFavorites: keepFavorites,
+                );
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(keepFavorites
+                          ? 'History cleared (favorites kept)'
+                          : 'All QR history cleared'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              },
+              child: const Text('Clear History'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _confirmClearScans(BuildContext context) {
     showDialog(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        title: const Text('Clear All QR History?'),
+        title: const Text('Clear Scanned QR History?'),
         content: const Text(
-          'This will permanently delete all generated and saved QR codes from this device. Are you sure you want to proceed?',
+          'This will permanently delete all scanned QR codes from your scan history. Are you sure you want to proceed?',
         ),
         actions: [
           TextButton(
@@ -30,17 +98,17 @@ class SettingsScreen extends StatelessWidget {
             ),
             onPressed: () async {
               Navigator.pop(dialogCtx);
-              await storageService.clearHistory();
+              await storageService.clearScanHistory();
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('All history cleared successfully'),
+                    content: Text('All scan history cleared successfully'),
                     behavior: SnackBarBehavior.floating,
                   ),
                 );
               }
             },
-            child: const Text('Clear All'),
+            child: const Text('Clear Scans'),
           ),
         ],
       ),
@@ -61,6 +129,8 @@ class SettingsScreen extends StatelessWidget {
           builder: (context, _) {
             final currentMode = storageService.themeMode;
             final historyCount = storageService.history.length;
+            final favCount = storageService.favorites.length;
+            final scanCount = storageService.scanHistory.length;
 
             return ListView(
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
@@ -148,20 +218,20 @@ class SettingsScreen extends StatelessWidget {
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: const Icon(
-                            Icons.history_rounded,
+                            Icons.qr_code_2_rounded,
                             color: AppColors.primary,
                             size: 20,
                           ),
                         ),
                         title: const Text(
-                          'Stored QR Codes',
+                          'Generated QR Codes',
                           style: TextStyle(
                             fontSize: 14.5,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                         subtitle: Text(
-                          '$historyCount code${historyCount == 1 ? '' : 's'} stored on device',
+                          '$historyCount code${historyCount == 1 ? '' : 's'} ($favCount favorite${favCount == 1 ? '' : 's'})',
                           style: const TextStyle(fontSize: 12.5),
                         ),
                         trailing: Text(
@@ -178,17 +248,51 @@ class SettingsScreen extends StatelessWidget {
                         leading: Container(
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
+                            color: AppColors.secondary.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(
+                            Icons.camera_alt_rounded,
+                            color: AppColors.secondary,
+                            size: 20,
+                          ),
+                        ),
+                        title: const Text(
+                          'Scanned QR Records',
+                          style: TextStyle(
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        subtitle: Text(
+                          '$scanCount scan record${scanCount == 1 ? '' : 's'} stored',
+                          style: const TextStyle(fontSize: 12.5),
+                        ),
+                        trailing: Text(
+                          '$scanCount',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.secondary,
+                          ),
+                        ),
+                      ),
+                      const Divider(),
+                      ListTile(
+                        leading: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
                             color: AppColors.error.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: const Icon(
-                            Icons.delete_outline_rounded,
+                            Icons.delete_sweep_rounded,
                             color: AppColors.error,
                             size: 20,
                           ),
                         ),
                         title: const Text(
-                          'Clear All History',
+                          'Clear QR History',
                           style: TextStyle(
                             fontSize: 14.5,
                             fontWeight: FontWeight.w600,
@@ -196,12 +300,43 @@ class SettingsScreen extends StatelessWidget {
                           ),
                         ),
                         subtitle: const Text(
-                          'Permanently wipe all saved QR records',
+                          'Clear generated history with safe favorites option',
                           style: TextStyle(fontSize: 12.5),
                         ),
                         trailing: const Icon(Icons.chevron_right_rounded),
                         onTap: historyCount > 0
                             ? () => _confirmClearHistory(context)
+                            : null,
+                      ),
+                      const Divider(),
+                      ListTile(
+                        leading: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(
+                            Icons.delete_outline_rounded,
+                            color: Colors.orange,
+                            size: 20,
+                          ),
+                        ),
+                        title: const Text(
+                          'Clear Scan History',
+                          style: TextStyle(
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.orange,
+                          ),
+                        ),
+                        subtitle: const Text(
+                          'Remove all saved camera scans',
+                          style: TextStyle(fontSize: 12.5),
+                        ),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: scanCount > 0
+                            ? () => _confirmClearScans(context)
                             : null,
                       ),
                     ],
@@ -245,13 +380,13 @@ class SettingsScreen extends StatelessWidget {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                'All QR codes are generated directly on your device. No data is ever sent to external cloud servers or third parties.',
+                                'All QR codes and scans are generated and stored locally on your device. No data is ever sent to external cloud servers.',
                                 style: TextStyle(
                                   fontSize: 12.5,
-                                  height: 1.4,
                                   color: isDark
                                       ? AppColors.darkTextSecondary
                                       : AppColors.lightTextSecondary,
+                                  height: 1.4,
                                 ),
                               ),
                             ],
@@ -264,80 +399,71 @@ class SettingsScreen extends StatelessWidget {
                 const SizedBox(height: 24),
 
                 // 4. About App Section
-                _sectionHeader(context, 'About Application'),
+                _sectionHeader(context, 'About QR Studio Pro'),
                 const SizedBox(height: 8),
 
                 Card(
-                  child: Column(
-                    children: [
-                      ListTile(
-                        leading: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [AppColors.primary, AppColors.secondary],
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  colors: [AppColors.primary, AppColors.secondary],
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(
+                                Icons.qr_code_2_rounded,
+                                color: Colors.white,
+                                size: 24,
+                              ),
                             ),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(
-                            Icons.qr_code_2_rounded,
-                            color: Colors.white,
-                            size: 20,
-                          ),
+                            const SizedBox(width: 14),
+                            const Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'QR Studio Pro',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                SizedBox(height: 2),
+                                Text(
+                                  'Version 2.0.0 (Build 2026)',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
-                        title: const Text(
-                          'QR Studio Pro',
+                        const SizedBox(height: 14),
+                        const Divider(),
+                        const SizedBox(height: 8),
+                        Text(
+                          'A complete, private QR utility for generating, styling, exporting, scanning, and managing QR codes across all essential formats.',
                           style: TextStyle(
-                            fontSize: 14.5,
-                            fontWeight: FontWeight.w700,
+                            fontSize: 12.5,
+                            color: isDark
+                                ? AppColors.darkTextSecondary
+                                : AppColors.lightTextSecondary,
+                            height: 1.4,
                           ),
                         ),
-                        subtitle: const Text('Flutter Internship Edition'),
-                        trailing: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: const Text(
-                            'v1.0.0',
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const Divider(),
-                      const ListTile(
-                        leading: Icon(Icons.architecture_rounded, size: 20),
-                        title: Text(
-                          'Architecture',
-                          style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
-                        ),
-                        subtitle: Text(
-                          'Feature-based Clean Architecture • Local Persistence',
-                          style: TextStyle(fontSize: 12),
-                        ),
-                      ),
-                      const Divider(),
-                      const ListTile(
-                        leading: Icon(Icons.check_circle_outline_rounded, size: 20),
-                        title: Text(
-                          'Capabilities',
-                          style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
-                        ),
-                        subtitle: Text(
-                          '7 QR Content Types • High-Res PNG Export • Scanner • Custom Themes',
-                          style: TextStyle(fontSize: 12),
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 30),
               ],
             );
           },
@@ -347,12 +473,15 @@ class SettingsScreen extends StatelessWidget {
   }
 
   Widget _sectionHeader(BuildContext context, String title) {
-    return Text(
-      title,
-      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.2,
-          ),
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: Text(
+        title,
+        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.1,
+            ),
+      ),
     );
   }
 
@@ -370,7 +499,7 @@ class SettingsScreen extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
+          duration: const Duration(milliseconds: 150),
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
             color: isSelected
@@ -381,11 +510,10 @@ class SettingsScreen extends StatelessWidget {
               color: isSelected
                   ? AppColors.primary
                   : (isDark ? AppColors.darkBorder : Colors.grey.shade300),
-              width: isSelected ? 1.8 : 1,
+              width: isSelected ? 2 : 1,
             ),
           ),
           child: Column(
-            mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
                 icon,
@@ -393,8 +521,8 @@ class SettingsScreen extends StatelessWidget {
                 color: isSelected
                     ? Colors.white
                     : (isDark
-                        ? AppColors.darkTextPrimary
-                        : AppColors.lightTextPrimary),
+                        ? AppColors.darkTextSecondary
+                        : AppColors.lightTextSecondary),
               ),
               const SizedBox(height: 6),
               Text(

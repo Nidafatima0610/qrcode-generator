@@ -26,7 +26,87 @@ class QrPreviewScreen extends StatefulWidget {
 class _QrPreviewScreenState extends State<QrPreviewScreen> {
   final GlobalKey _repaintBoundaryKey = GlobalKey();
   bool _isSharing = false;
+  bool _isSaving = false;
   bool _showRawPayload = false;
+  late bool _isFavorite;
+  bool _presentationMode = false; // false = QR Only, true = With Info Card (Requirement 8)
+
+  @override
+  void initState() {
+    super.initState();
+    // Check current favorite status from storage service
+    final storedItem = widget.storageService.history
+        .firstWhere((e) => e.id == widget.item.id, orElse: () => widget.item);
+    _isFavorite = storedItem.isFavorite;
+  }
+
+  Future<void> _toggleFavorite() async {
+    final newStatus = await widget.storageService.toggleFavorite(widget.item.id);
+    setState(() => _isFavorite = newStatus);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            newStatus
+                ? 'Added "${widget.item.title}" to Favorites'
+                : 'Removed "${widget.item.title}" from Favorites',
+          ),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  Future<void> _saveQrImage() async {
+    if (_isSaving) return;
+    setState(() => _isSaving = true);
+
+    try {
+      final savedPath = await QrSharingService.saveQrImageToDevice(
+        repaintBoundaryKey: _repaintBoundaryKey,
+        title: widget.item.title,
+      );
+
+      if (!mounted) return;
+
+      if (savedPath != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle_rounded,
+                    color: Colors.white, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Saved QR image successfully!\nLocation: $savedPath',
+                    style: const TextStyle(fontSize: 12.5),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: AppColors.success,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to save QR image. Please check permissions.'),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
+  }
 
   Future<void> _shareQrImage() async {
     if (_isSharing) return;
@@ -42,7 +122,7 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
       if (!success && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Failed to export QR image for sharing'),
+            content: Text('Failed to prepare QR image for sharing'),
             backgroundColor: AppColors.error,
           ),
         );
@@ -65,17 +145,19 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
   void _handleSmartAction() {
     final payload = widget.item.rawPayload;
     if (widget.item.type == QrType.url ||
+        widget.item.type == QrType.social ||
         payload.startsWith('http://') ||
         payload.startsWith('https://')) {
       QrSharingService.launchExternalUrl(payload);
-    } else if (widget.item.type == QrType.phone ||
-        payload.startsWith('tel:')) {
+    } else if (widget.item.type == QrType.location ||
+        payload.startsWith('geo:') ||
+        payload.contains('maps.google.com')) {
       QrSharingService.launchExternalUrl(payload);
-    } else if (widget.item.type == QrType.email ||
-        payload.startsWith('mailto:')) {
+    } else if (widget.item.type == QrType.phone || payload.startsWith('tel:')) {
       QrSharingService.launchExternalUrl(payload);
-    } else if (widget.item.type == QrType.sms ||
-        payload.startsWith('smsto:')) {
+    } else if (widget.item.type == QrType.email || payload.startsWith('mailto:')) {
+      QrSharingService.launchExternalUrl(payload);
+    } else if (widget.item.type == QrType.sms || payload.startsWith('smsto:')) {
       QrSharingService.launchExternalUrl(payload);
     }
   }
@@ -89,6 +171,8 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
         DateFormat('MMMM d, y • h:mm a').format(item.createdAt);
 
     final hasSmartAction = item.type == QrType.url ||
+        item.type == QrType.social ||
+        item.type == QrType.location ||
         item.type == QrType.phone ||
         item.type == QrType.email ||
         item.type == QrType.sms;
@@ -97,6 +181,17 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
       appBar: AppBar(
         title: const Text('QR Code Preview'),
         actions: [
+          // Favorite Action (Requirement 1)
+          IconButton(
+            icon: Icon(
+              _isFavorite
+                  ? Icons.favorite_rounded
+                  : Icons.favorite_border_rounded,
+              color: _isFavorite ? AppColors.error : null,
+            ),
+            tooltip: _isFavorite ? 'Remove Favorite' : 'Mark as Favorite',
+            onPressed: _toggleFavorite,
+          ),
           IconButton(
             icon: const Icon(Icons.copy_rounded),
             tooltip: 'Copy Payload',
@@ -111,7 +206,7 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -143,7 +238,7 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
                   ],
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
 
               // Title
               Text(
@@ -154,7 +249,7 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
                       letterSpacing: -0.5,
                     ),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 4),
 
               // Date
               Text(
@@ -166,21 +261,54 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
                       : AppColors.lightTextSecondary,
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 16),
 
-              // QR Code Presentation with RepaintBoundary for high-res export
+              // Export Presentation Mode Toggle (Requirement 8)
+              Container(
+                decoration: BoxDecoration(
+                  color: isDark ? AppColors.darkCard : Colors.grey.shade200,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding: const EdgeInsets.all(3),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _modeButton(
+                      label: 'QR Only',
+                      icon: Icons.qr_code_2_rounded,
+                      isActive: !_presentationMode,
+                      onTap: () => setState(() => _presentationMode = false),
+                    ),
+                    _modeButton(
+                      label: 'With Info Card',
+                      icon: Icons.badge_outlined,
+                      isActive: _presentationMode,
+                      onTap: () => setState(() => _presentationMode = true),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Dynamic QR Presentation View (with RepaintBoundary)
               Center(
                 child: QrRenderView(
                   data: item.rawPayload,
                   customization: item.customization,
                   size: 240,
                   repaintBoundaryKey: _repaintBoundaryKey,
-                  showContainer: true,
+                  showContainer: !_presentationMode,
+                  presentationCard: _presentationMode,
+                  cardTitle: item.title,
+                  cardSubtitle: item.subtitle,
+                  cardTypeLabel: item.type.label,
+                  cardTypeIcon: item.type.icon,
+                  cardTypeColor: item.type.color,
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
 
-              // Customization Pills
+              // Customization Spec Chips
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
@@ -194,17 +322,33 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
                     context,
                     'Format: ${item.type.shortName}',
                   ),
+                  if (item.customization.dataModuleShape != 'square')
+                    _infoChip(
+                      context,
+                      'Dots: ${item.customization.dataModuleShape}',
+                    ),
+                  if (item.customization.eyeShape != 'square')
+                    _infoChip(
+                      context,
+                      'Eyes: ${item.customization.eyeShape}',
+                    ),
                 ],
               ),
-              const SizedBox(height: 28),
+              const SizedBox(height: 24),
 
-              // Primary Actions
+              // Primary Export Actions (Save Image & Share Image)
               Row(
                 children: [
+                  // Save to Device / Gallery Button (Requirement 7)
                   Expanded(
                     child: ElevatedButton.icon(
-                      onPressed: _isSharing ? null : _shareQrImage,
-                      icon: _isSharing
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      onPressed: _isSaving ? null : _saveQrImage,
+                      icon: _isSaving
                           ? const SizedBox(
                               width: 18,
                               height: 18,
@@ -213,26 +357,39 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
                                 color: Colors.white,
                               ),
                             )
-                          : const Icon(Icons.share_rounded, size: 20),
-                      label: Text(_isSharing ? 'Preparing...' : 'Share Image'),
+                          : const Icon(Icons.download_rounded, size: 20),
+                      label: Text(_isSaving ? 'Saving...' : 'Save to Device'),
                     ),
                   ),
                   const SizedBox(width: 12),
+                  // Share Image Button
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: _copyContent,
-                      icon: const Icon(Icons.copy_rounded, size: 19),
-                      label: const Text('Copy Content'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      onPressed: _isSharing ? null : _shareQrImage,
+                      icon: _isSharing
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Icon(Icons.share_rounded, size: 20),
+                      label: Text(_isSharing ? 'Sharing...' : 'Share Image'),
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 12),
 
-              // Smart Direct Action (if applicable: Visit website, dial, email)
+              // Smart Direct Action (if applicable)
               if (hasSmartAction) ...[
                 SizedBox(
                   width: double.infinity,
+                  height: 46,
                   child: ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: typeColor,
@@ -256,15 +413,13 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
                       widget.onEdit!();
                     },
                     icon: const Icon(Icons.edit_note_rounded, size: 20),
-                    label: const Text('Edit / Re-generate'),
+                    label: const Text('Edit / Re-generate Code'),
                   ),
                 ),
                 const SizedBox(height: 8),
               ],
 
-              const SizedBox(height: 12),
-
-              // Summary / Raw Payload Inspector Card
+              // Content Payload Inspector Card
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
@@ -281,21 +436,35 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
                               fontWeight: FontWeight.w700,
                             ),
                           ),
-                          TextButton(
-                            style: TextButton.styleFrom(
-                              padding: EdgeInsets.zero,
-                              minimumSize: const Size(60, 30),
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                            onPressed: () {
-                              setState(() {
-                                _showRawPayload = !_showRawPayload;
-                              });
-                            },
-                            child: Text(
-                              _showRawPayload ? 'Show Summary' : 'View Raw',
-                              style: const TextStyle(fontSize: 12),
-                            ),
+                          Row(
+                            children: [
+                              TextButton(
+                                style: TextButton.styleFrom(
+                                  padding: EdgeInsets.zero,
+                                  minimumSize: const Size(60, 28),
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                onPressed: _copyContent,
+                                child: const Text('Copy', style: TextStyle(fontSize: 12)),
+                              ),
+                              const SizedBox(width: 8),
+                              TextButton(
+                                style: TextButton.styleFrom(
+                                  padding: EdgeInsets.zero,
+                                  minimumSize: const Size(60, 28),
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                onPressed: () {
+                                  setState(() {
+                                    _showRawPayload = !_showRawPayload;
+                                  });
+                                },
+                                child: Text(
+                                  _showRawPayload ? 'Summary' : 'View Raw',
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
@@ -342,6 +511,61 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
     );
   }
 
+  Widget _modeButton({
+    required String label,
+    required IconData icon,
+    required bool isActive,
+    required VoidCallback onTap,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color: isActive
+              ? (isDark ? AppColors.primary : Colors.white)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: isActive
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.08),
+                    blurRadius: 4,
+                  )
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: isActive
+                  ? (isDark ? Colors.white : AppColors.primary)
+                  : Colors.grey,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                color: isActive
+                    ? (isDark ? Colors.white : AppColors.primary)
+                    : Colors.grey,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _infoChip(BuildContext context, String text) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
@@ -371,11 +595,14 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
   String _smartActionLabel(QrType type) {
     switch (type) {
       case QrType.url:
+      case QrType.social:
         return 'Open in Browser';
+      case QrType.location:
+        return 'Open in Google Maps';
       case QrType.phone:
         return 'Call Number';
       case QrType.email:
-        return 'Send Email';
+        return 'Compose Email';
       case QrType.sms:
         return 'Send Text Message';
       default:
