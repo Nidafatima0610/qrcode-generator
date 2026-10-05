@@ -588,6 +588,62 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
                   ),
                 ],
               ),
+              const SizedBox(height: 10),
+
+              // Back to Create & Generate New Row
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 11),
+                      ),
+                      onPressed: () {
+                        if (Navigator.canPop(context)) {
+                          Navigator.pop(context);
+                        } else {
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => CreateScreen(
+                                storageService: widget.storageService,
+                              ),
+                            ),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                      label: const Text('Back to Create'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary.withValues(alpha: 0.12),
+                        foregroundColor: AppColors.primary,
+                        elevation: 0,
+                        side: BorderSide(
+                          color: AppColors.primary.withValues(alpha: 0.3),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 11),
+                      ),
+                      onPressed: () {
+                        Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => CreateScreen(
+                              storageService: widget.storageService,
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.add_circle_outline_rounded, size: 18),
+                      label: const Text('Generate New'),
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 16),
 
               // Content Utilities Row (Call, Email, Maps, Web, Copy, etc.)

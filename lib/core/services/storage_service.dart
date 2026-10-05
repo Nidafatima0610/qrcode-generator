@@ -352,6 +352,14 @@ class StorageService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Delete multiple scan items in batch
+  Future<void> deleteMultipleScanItems(List<String> ids) async {
+    final idSet = ids.toSet();
+    _scanHistory.removeWhere((e) => idSet.contains(e.id));
+    await _persistScanHistory();
+    notifyListeners();
+  }
+
   /// Clear all scan history
   Future<void> clearScanHistory() async {
     _scanHistory.clear();

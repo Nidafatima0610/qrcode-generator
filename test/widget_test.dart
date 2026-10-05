@@ -15,7 +15,7 @@ void main() {
       tester.view.resetDevicePixelRatio();
     });
 
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({'qr_onboarding_completed_v1': true});
     final storageService = await StorageService.init();
 
     // Add an initial item
@@ -39,11 +39,10 @@ void main() {
     expect(find.text('Generated'), findsOneWidget);
     expect(find.text('Total Scans'), findsOneWidget);
     expect(find.text('Favorites'), findsWidgets);
-    expect(find.text('Ready-Made QR Templates'), findsOneWidget);
-    expect(find.text('Quick Create Formats'), findsOneWidget);
+    expect(find.text('QR Type Shortcuts'), findsOneWidget);
 
-    // Verify item is present in recent list
-    expect(find.text('Initial Web QR'), findsOneWidget);
+    // Verify item is present in recent and favorites list
+    expect(find.text('Initial Web QR'), findsWidgets);
 
     // Verify Bottom Navigation Bar Destinations
     expect(find.text('Home'), findsOneWidget);
@@ -57,7 +56,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Select QR Type'), findsOneWidget);
-    expect(find.text('Advanced Customization'), findsOneWidget);
+    expect(find.textContaining('Advanced Customization'), findsOneWidget);
 
     // Tap on History tab to test tab navigation
     await tester.tap(find.text('History'));

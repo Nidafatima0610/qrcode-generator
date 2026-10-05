@@ -131,6 +131,7 @@ class _CreateScreenState extends State<CreateScreen> {
         _applyInitialValues(widget.initialValues!);
       }
     }
+    _attachListeners();
   }
 
   void _populateFromEditingItem(QrItem item) {
@@ -406,6 +407,42 @@ class _CreateScreenState extends State<CreateScreen> {
     super.dispose();
   }
 
+  void _attachListeners() {
+    final controllers = [
+      _textController,
+      _urlController,
+      _wifiSsidController,
+      _wifiPasswordController,
+      _contactFirstNameController,
+      _contactLastNameController,
+      _contactPhoneController,
+      _contactEmailController,
+      _phoneController,
+      _smsPhoneController,
+      _smsMessageController,
+      _locationLatController,
+      _locationLngController,
+      _locationNameController,
+      _socialUrlController,
+      _bizCardFullNameController,
+      _bizCardTitleController,
+      _bizCardCompanyController,
+      _bizInfoNameController,
+      _bizInfoPhoneController,
+      _emailRecipientController,
+      _emailSubjectController,
+    ];
+    for (final c in controllers) {
+      c.addListener(_onFieldChanged);
+    }
+  }
+
+  void _onFieldChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   QrCustomization get _currentCustomization {
     final preset = AppColors.presets[_selectedColorPresetIndex];
     return QrCustomization(
@@ -421,14 +458,14 @@ class _CreateScreenState extends State<CreateScreen> {
   void _resetCustomization() {
     setState(() {
       _selectedColorPresetIndex = 0;
-      _selectedErrorCorrection = 'M';
-      _qrSize = 240.0;
+      _selectedErrorCorrection = widget.storageService.defaultErrorCorrection;
+      _qrSize = widget.storageService.defaultQrSize;
       _selectedEyeShape = 'square';
       _selectedModuleShape = 'square';
     });
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Customization reset to default'),
+        content: Text('Customization reset to defaults'),
         behavior: SnackBarBehavior.floating,
         duration: Duration(seconds: 1),
       ),
@@ -656,6 +693,38 @@ class _CreateScreenState extends State<CreateScreen> {
   void _generateQrCode({bool saveAsNew = false}) async {
     if (!_formKey.currentState!.validate()) {
       return;
+    }
+
+    if (!_currentCustomization.hasSufficientContrast) {
+      final shouldProceed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: AppColors.warning),
+              SizedBox(width: 8),
+              Text('Low Contrast Warning'),
+            ],
+          ),
+          content: Text(
+            'The selected colors have a low contrast ratio (${_currentCustomization.contrastRatio.toStringAsFixed(1)}:1). Camera scanners might fail to decode this code.\n\nDo you want to auto-fix the contrast or generate anyway?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(ctx, false);
+                setState(() => _selectedColorPresetIndex = 0);
+              },
+              child: const Text('Auto-Fix Contrast'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Generate Anyway'),
+            ),
+          ],
+        ),
+      );
+      if (shouldProceed != true) return;
     }
 
     final payload = _buildPayload();
@@ -987,6 +1056,13 @@ class _CreateScreenState extends State<CreateScreen> {
                             ],
                           ),
                           const SizedBox(height: 12),
+
+                          // Contrast warning if insufficient
+                          _buildContrastWarning(isDark),
+
+                          // Built-in Visual Presets (Classic, Dark, Soft, Business, Minimal)
+                          _buildVisualPresetsSelector(isDark),
+                          const SizedBox(height: 16),
 
                           // Color Palette Presets
                           const Text(
@@ -1323,8 +1399,473 @@ class _CreateScreenState extends State<CreateScreen> {
               color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted,
             ),
           ),
+          _buildEnteredInfoSummary(isDark),
         ],
       ),
+    );
+  }
+
+  Widget _buildContrastWarning(bool isDark) {
+    final ratio = _currentCustomization.contrastRatio;
+    if (ratio >= 3.0) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.warning.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.warning.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.warning_amber_rounded, color: AppColors.warning, size: 22),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Low Contrast Warning (${ratio.toStringAsFixed(1)}:1)',
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.warning,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Camera sensors may struggle to scan this QR code. A contrast ratio of 3.0:1 or higher is recommended.',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton(
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              visualDensity: VisualDensity.compact,
+            ),
+            onPressed: () {
+              setState(() {
+                _selectedColorPresetIndex = 0; // Classic Black on White (21:1)
+              });
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Auto-fixed contrast to Classic Black (21:1 ratio)'),
+                  behavior: SnackBarBehavior.floating,
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            },
+            child: const Text('Auto Fix', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVisualPresetsSelector(bool isDark) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Visual Design Presets',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+            ),
+            Text(
+              'One-tap styles',
+              style: TextStyle(fontSize: 11.5, color: isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 64,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: QrDesignPreset.builtInPresets.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 8),
+            itemBuilder: (context, index) {
+              final preset = QrDesignPreset.builtInPresets[index];
+              final isMatching = _selectedEyeShape == preset.customization.eyeShape &&
+                  _selectedModuleShape == preset.customization.dataModuleShape &&
+                  AppColors.presets[_selectedColorPresetIndex].foreground.toARGB32() ==
+                      preset.customization.foregroundColor.toARGB32() &&
+                  AppColors.presets[_selectedColorPresetIndex].background.toARGB32() ==
+                      preset.customization.backgroundColor.toARGB32();
+
+              return InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () {
+                  setState(() {
+                    _selectedEyeShape = preset.customization.eyeShape;
+                    _selectedModuleShape = preset.customization.dataModuleShape;
+                    _selectedErrorCorrection = preset.customization.errorCorrectionLevel;
+
+                    for (int i = 0; i < AppColors.presets.length; i++) {
+                      if (AppColors.presets[i].foreground.toARGB32() ==
+                              preset.customization.foregroundColor.toARGB32() &&
+                          AppColors.presets[i].background.toARGB32() ==
+                              preset.customization.backgroundColor.toARGB32()) {
+                        _selectedColorPresetIndex = i;
+                        break;
+                      }
+                    }
+                  });
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Applied "${preset.name}" preset: ${preset.description}'),
+                      behavior: SnackBarBehavior.floating,
+                      duration: const Duration(seconds: 1),
+                    ),
+                  );
+                },
+                child: Container(
+                  width: 90,
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: isMatching
+                        ? AppColors.primary.withValues(alpha: isDark ? 0.25 : 0.12)
+                        : (isDark ? AppColors.darkSurface : Colors.grey.shade100),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isMatching ? AppColors.primary : Colors.grey.shade300,
+                      width: isMatching ? 2 : 1,
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        preset.icon,
+                        size: 20,
+                        color: isMatching ? AppColors.primary : (isDark ? Colors.white70 : Colors.black87),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        preset.name,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: isMatching ? FontWeight.w700 : FontWeight.w500,
+                          color: isMatching ? AppColors.primary : (isDark ? Colors.white : Colors.black87),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEnteredInfoSummary(bool isDark) {
+    Widget summaryContent;
+
+    switch (_selectedType) {
+      case QrType.url:
+        final raw = _urlController.text.trim();
+        final hasUrl = raw.isNotEmpty && raw != 'https://' && raw != 'http://';
+        summaryContent = Row(
+          children: [
+            const Icon(Icons.link_rounded, size: 16, color: AppColors.typeUrl),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                hasUrl ? QrPayloadBuilder.buildUrl(raw) : 'Enter URL above to view target',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: hasUrl ? FontWeight.w600 : FontWeight.normal,
+                  color: hasUrl ? (isDark ? Colors.white : Colors.black87) : Colors.grey,
+                ),
+              ),
+            ),
+          ],
+        );
+        break;
+
+      case QrType.wifi:
+        final ssid = _wifiSsidController.text.trim();
+        final hasPass = _wifiPasswordController.text.trim().isNotEmpty;
+        final sec = _wifiSecurity;
+        final isNoPass = sec == 'nopass';
+        summaryContent = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.wifi_rounded, size: 16, color: AppColors.typeWifi),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    ssid.isNotEmpty ? 'Network: $ssid' : 'Enter Wi-Fi network SSID',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: ssid.isNotEmpty ? FontWeight.w600 : FontWeight.normal,
+                      color: ssid.isNotEmpty ? (isDark ? Colors.white : Colors.black87) : Colors.grey,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 3),
+            Text(
+              'Security: $sec • ${isNoPass ? "Open Network" : (hasPass ? "Password configured (●●●●)" : "No password entered")}',
+              style: TextStyle(
+                fontSize: 11,
+                color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+              ),
+            ),
+          ],
+        );
+        break;
+
+      case QrType.contact:
+        final fName = _contactFirstNameController.text.trim();
+        final lName = _contactLastNameController.text.trim();
+        final fullName = '$fName $lName'.trim();
+        final phone = _contactPhoneController.text.trim();
+        summaryContent = Row(
+          children: [
+            const Icon(Icons.person_outline_rounded, size: 16, color: AppColors.typeContact),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                fullName.isNotEmpty
+                    ? '$fullName${phone.isNotEmpty ? " • $phone" : ""}'
+                    : 'Enter contact name and details',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: fullName.isNotEmpty ? FontWeight.w600 : FontWeight.normal,
+                  color: fullName.isNotEmpty ? (isDark ? Colors.white : Colors.black87) : Colors.grey,
+                ),
+              ),
+            ),
+          ],
+        );
+        break;
+
+      case QrType.businessCard:
+        final name = _bizCardFullNameController.text.trim();
+        final title = _bizCardTitleController.text.trim();
+        final company = _bizCardCompanyController.text.trim();
+        summaryContent = Row(
+          children: [
+            const Icon(Icons.badge_outlined, size: 16, color: AppColors.typeBusinessCard),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                name.isNotEmpty
+                    ? '$name${title.isNotEmpty ? " • $title" : ""}${company.isNotEmpty ? " ($company)" : ""}'
+                    : 'Enter full business card profile',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: name.isNotEmpty ? FontWeight.w600 : FontWeight.normal,
+                  color: name.isNotEmpty ? (isDark ? Colors.white : Colors.black87) : Colors.grey,
+                ),
+              ),
+            ),
+          ],
+        );
+        break;
+
+      case QrType.businessInfo:
+        final bName = _bizInfoNameController.text.trim();
+        final phone = _bizInfoPhoneController.text.trim();
+        summaryContent = Row(
+          children: [
+            const Icon(Icons.storefront_rounded, size: 16, color: AppColors.typeBusinessInfo),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                bName.isNotEmpty
+                    ? '$bName${phone.isNotEmpty ? " • $phone" : ""}'
+                    : 'Enter business name & hours',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: bName.isNotEmpty ? FontWeight.w600 : FontWeight.normal,
+                  color: bName.isNotEmpty ? (isDark ? Colors.white : Colors.black87) : Colors.grey,
+                ),
+              ),
+            ),
+          ],
+        );
+        break;
+
+      case QrType.email:
+        final email = _emailRecipientController.text.trim();
+        final sub = _emailSubjectController.text.trim();
+        summaryContent = Row(
+          children: [
+            const Icon(Icons.mail_outline_rounded, size: 16, color: AppColors.typeEmail),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                email.isNotEmpty
+                    ? 'To: $email${sub.isNotEmpty ? " • Subject: $sub" : ""}'
+                : 'Enter recipient email & subject',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: email.isNotEmpty ? FontWeight.w600 : FontWeight.normal,
+                  color: email.isNotEmpty ? (isDark ? Colors.white : Colors.black87) : Colors.grey,
+                ),
+              ),
+            ),
+          ],
+        );
+        break;
+
+      case QrType.phone:
+        final phone = _phoneController.text.trim();
+        summaryContent = Row(
+          children: [
+            const Icon(Icons.phone_in_talk_rounded, size: 16, color: AppColors.typePhone),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                phone.isNotEmpty ? 'Dial: $phone' : 'Enter target telephone number',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: phone.isNotEmpty ? FontWeight.w600 : FontWeight.normal,
+                  color: phone.isNotEmpty ? (isDark ? Colors.white : Colors.black87) : Colors.grey,
+                ),
+              ),
+            ),
+          ],
+        );
+        break;
+
+      case QrType.sms:
+        final phone = _smsPhoneController.text.trim();
+        final msg = _smsMessageController.text.trim();
+        summaryContent = Row(
+          children: [
+            const Icon(Icons.sms_outlined, size: 16, color: AppColors.typeSms),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                phone.isNotEmpty
+                    ? 'SMS to $phone${msg.isNotEmpty ? ": \"$msg\"" : ""}'
+                    : 'Enter recipient phone and message template',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: phone.isNotEmpty ? FontWeight.w600 : FontWeight.normal,
+                  color: phone.isNotEmpty ? (isDark ? Colors.white : Colors.black87) : Colors.grey,
+                ),
+              ),
+            ),
+          ],
+        );
+        break;
+
+      case QrType.location:
+        final name = _locationNameController.text.trim();
+        final lat = _locationLatController.text.trim();
+        final lng = _locationLngController.text.trim();
+        summaryContent = Row(
+          children: [
+            const Icon(Icons.location_on_rounded, size: 16, color: AppColors.typeLocation),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                lat.isNotEmpty && lng.isNotEmpty
+                    ? '${name.isNotEmpty ? "$name • " : ""}Coordinates: $lat, $lng'
+                    : 'Enter map latitude and longitude coordinates',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: lat.isNotEmpty ? FontWeight.w600 : FontWeight.normal,
+                  color: lat.isNotEmpty ? (isDark ? Colors.white : Colors.black87) : Colors.grey,
+                ),
+              ),
+            ),
+          ],
+        );
+        break;
+
+      case QrType.social:
+        final handle = _socialUrlController.text.trim();
+        summaryContent = Row(
+          children: [
+            const Icon(Icons.share_rounded, size: 16, color: AppColors.typeSocial),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                handle.isNotEmpty
+                    ? '$_socialPlatform: ${QrPayloadBuilder.buildSocial(platform: _socialPlatform, usernameOrUrl: handle)}'
+                    : 'Select platform and enter handle or URL',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: handle.isNotEmpty ? FontWeight.w600 : FontWeight.normal,
+                  color: handle.isNotEmpty ? (isDark ? Colors.white : Colors.black87) : Colors.grey,
+                ),
+              ),
+            ),
+          ],
+        );
+        break;
+
+      case QrType.text:
+        final text = _textController.text.trim();
+        summaryContent = Row(
+          children: [
+            const Icon(Icons.notes_rounded, size: 16, color: AppColors.typeText),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                text.isNotEmpty
+                    ? '${text.length > 50 ? "${text.substring(0, 50)}..." : text} (${text.length} chars)'
+                    : 'Enter plain text or note content',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: text.isNotEmpty ? FontWeight.w600 : FontWeight.normal,
+                  color: text.isNotEmpty ? (isDark ? Colors.white : Colors.black87) : Colors.grey,
+                ),
+              ),
+            ),
+          ],
+        );
+        break;
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.black.withValues(alpha: 0.25) : Colors.grey.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+        ),
+      ),
+      child: summaryContent,
     );
   }
 
@@ -1515,6 +2056,15 @@ class _CreateScreenState extends State<CreateScreen> {
           hint: 'Enter wireless password',
           prefixIcon: Icons.lock_outline_rounded,
           obscureText: _wifiObscurePass,
+          validator: (val) {
+            if (_wifiSecurity != 'nopass' && (val == null || val.trim().isEmpty)) {
+              return 'Password is required for secured network';
+            }
+            if (_wifiSecurity == 'WPA' && val != null && val.trim().isNotEmpty && val.trim().length < 8) {
+              return 'WPA password must be at least 8 characters';
+            }
+            return null;
+          },
           suffixIcon: IconButton(
             icon: Icon(
               _wifiObscurePass
@@ -1808,7 +2358,11 @@ class _CreateScreenState extends State<CreateScreen> {
           prefixIcon: Icons.mail_outline_rounded,
           keyboardType: TextInputType.emailAddress,
           validator: (val) {
-            if (val == null || val.trim().isEmpty || !val.contains('@')) {
+            if (val == null || val.trim().isEmpty) {
+              return 'Please enter recipient email';
+            }
+            final emailRegex = RegExp(r'^[\w\.-]+@[\w\.-]+\.\w+$');
+            if (!emailRegex.hasMatch(val.trim())) {
               return 'Please enter a valid email address';
             }
             return null;
@@ -1848,6 +2402,10 @@ class _CreateScreenState extends State<CreateScreen> {
             if (val == null || val.trim().isEmpty) {
               return 'Phone number cannot be empty';
             }
+            final clean = val.replaceAll(RegExp(r'[\s\-\(\)\+]'), '');
+            if (clean.length < 3) {
+              return 'Please enter a valid phone number';
+            }
             return null;
           },
         ),
@@ -1869,6 +2427,10 @@ class _CreateScreenState extends State<CreateScreen> {
           validator: (val) {
             if (val == null || val.trim().isEmpty) {
               return 'Recipient phone is required';
+            }
+            final clean = val.replaceAll(RegExp(r'[\s\-\(\)\+]'), '');
+            if (clean.length < 3) {
+              return 'Please enter a valid recipient number';
             }
             return null;
           },
@@ -1908,8 +2470,12 @@ class _CreateScreenState extends State<CreateScreen> {
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true, signed: true),
                 validator: (val) {
-                  if (val == null || double.tryParse(val.trim()) == null) {
-                    return 'Valid latitude is required';
+                  if (val == null || val.trim().isEmpty) {
+                    return 'Latitude is required';
+                  }
+                  final lat = double.tryParse(val.trim());
+                  if (lat == null || lat < -90.0 || lat > 90.0) {
+                    return 'Must be between -90 and 90';
                   }
                   return null;
                 },
@@ -1925,8 +2491,12 @@ class _CreateScreenState extends State<CreateScreen> {
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true, signed: true),
                 validator: (val) {
-                  if (val == null || double.tryParse(val.trim()) == null) {
-                    return 'Valid longitude is required';
+                  if (val == null || val.trim().isEmpty) {
+                    return 'Longitude is required';
+                  }
+                  final lng = double.tryParse(val.trim());
+                  if (lng == null || lng < -180.0 || lng > 180.0) {
+                    return 'Must be between -180 and 180';
                   }
                   return null;
                 },

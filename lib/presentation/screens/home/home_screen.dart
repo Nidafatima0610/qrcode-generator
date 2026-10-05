@@ -142,16 +142,32 @@ class HomeScreen extends StatelessWidget {
                             ),
                           ],
                         ),
-                        // Quick scan icon button in top right
-                        IconButton(
-                          style: IconButton.styleFrom(
-                            backgroundColor: isDark
-                                ? AppColors.darkCard
-                                : AppColors.lightBorder.withValues(alpha: 0.5),
-                          ),
-                          icon: const Icon(Icons.qr_code_scanner_rounded, size: 20),
-                          tooltip: 'Open Scanner',
-                          onPressed: () => onNavigateToTab(3), // Scanner tab
+                        // Quick action buttons in top right (Scanner + Settings)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              style: IconButton.styleFrom(
+                                backgroundColor: isDark
+                                    ? AppColors.darkCard
+                                    : AppColors.lightBorder.withValues(alpha: 0.5),
+                              ),
+                              icon: const Icon(Icons.qr_code_scanner_rounded, size: 20),
+                              tooltip: 'Open Scanner',
+                              onPressed: () => onNavigateToTab(3), // Scanner tab
+                            ),
+                            const SizedBox(width: 6),
+                            IconButton(
+                              style: IconButton.styleFrom(
+                                backgroundColor: isDark
+                                    ? AppColors.darkCard
+                                    : AppColors.lightBorder.withValues(alpha: 0.5),
+                              ),
+                              icon: const Icon(Icons.settings_outlined, size: 20),
+                              tooltip: 'Settings',
+                              onPressed: () => onNavigateToTab(4), // Settings tab
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -380,62 +396,80 @@ class HomeScreen extends StatelessWidget {
                   ),
                 ),
 
-                // Horizontal Carousel of All 11 Formats
+                // Horizontal Carousel of All 11 Formats (Prioritized with the 6 Quick Types)
                 SliverToBoxAdapter(
                   child: SizedBox(
                     height: 92,
-                    child: ListView.separated(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      scrollDirection: Axis.horizontal,
-                      itemCount: QrType.values.length,
-                      separatorBuilder: (_, _) => const SizedBox(width: 10),
-                      itemBuilder: (context, index) {
-                        final type = QrType.values[index];
-                        final typeColor = type.color;
+                    child: Builder(
+                      builder: (context) {
+                        const prioritizedTypes = [
+                          QrType.url,
+                          QrType.wifi,
+                          QrType.contact,
+                          QrType.text,
+                          QrType.email,
+                          QrType.phone,
+                          QrType.sms,
+                          QrType.location,
+                          QrType.social,
+                          QrType.businessCard,
+                          QrType.businessInfo,
+                        ];
 
-                        return InkWell(
-                          borderRadius: BorderRadius.circular(14),
-                          onTap: () {
-                            onNavigateToTab(1, type);
-                          },
-                          child: Container(
-                            width: 82,
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: isDark ? AppColors.darkCard : Colors.white,
+                        return ListView.separated(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          scrollDirection: Axis.horizontal,
+                          itemCount: prioritizedTypes.length,
+                          separatorBuilder: (_, _) => const SizedBox(width: 10),
+                          itemBuilder: (context, index) {
+                            final type = prioritizedTypes[index];
+                            final typeColor = type.color;
+
+                            return InkWell(
                               borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                color: isDark
-                                    ? AppColors.darkBorder
-                                    : AppColors.lightBorder,
+                              onTap: () {
+                                onNavigateToTab(1, type);
+                              },
+                              child: Container(
+                                width: 82,
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: isDark ? AppColors.darkCard : Colors.white,
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                    color: isDark
+                                        ? AppColors.darkBorder
+                                        : AppColors.lightBorder,
+                                  ),
+                                ),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(7),
+                                      decoration: BoxDecoration(
+                                        color: typeColor.withValues(alpha: 0.12),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Icon(type.icon,
+                                          size: 19, color: typeColor),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      type.shortName,
+                                      textAlign: TextAlign.center,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(7),
-                                  decoration: BoxDecoration(
-                                    color: typeColor.withValues(alpha: 0.12),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(type.icon,
-                                      size: 19, color: typeColor),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  type.shortName,
-                                  textAlign: TextAlign.center,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                            );
+                          },
                         );
                       },
                     ),
@@ -532,63 +566,97 @@ class HomeScreen extends StatelessWidget {
                   ),
 
                 // ==========================================
-                // 3. BOTTOM: STATISTICS & RECENT ACTIVITY
+                // 3. FAVORITES SECTION (when storageService.favorites.isNotEmpty)
                 // ==========================================
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 22, 20, 8),
-                    child: Text(
-                      'Overview & Statistics',
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -0.2,
+                if (storageService.favorites.isNotEmpty) ...[
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.favorite_rounded,
+                                  size: 16, color: AppColors.error),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Favorite QR Codes',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleSmall
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: -0.2,
+                                    ),
+                              ),
+                            ],
                           ),
+                          TextButton(
+                            style: TextButton.styleFrom(
+                              padding: EdgeInsets.zero,
+                              minimumSize: const Size(60, 30),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            onPressed: () => onNavigateToTab(2, null, 1),
+                            child: Text(
+                              'View All (${storageService.favorites.length})',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-
-                // Real Statistics Dashboard
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 2, 20, 10),
-                    child: Row(
-                      children: [
-                        _buildStatCard(
-                          context: context,
-                          label: 'Generated',
-                          value: '${storageService.totalGenerated}',
-                          icon: Icons.qr_code_rounded,
-                          color: AppColors.primary,
-                          onTap: () => onNavigateToTab(2, null, 0),
-                        ),
-                        const SizedBox(width: 10),
-                        _buildStatCard(
-                          context: context,
-                          label: 'Total Scans',
-                          value: '${storageService.totalScans}',
-                          icon: Icons.camera_alt_rounded,
-                          color: AppColors.secondary,
-                          onTap: () => onNavigateToTab(2, null, 2),
-                        ),
-                        const SizedBox(width: 10),
-                        _buildStatCard(
-                          context: context,
-                          label: 'Favorites',
-                          value: '${storageService.totalFavorites}',
-                          icon: Icons.favorite_rounded,
-                          color: AppColors.error,
-                          onTap: () => onNavigateToTab(2, null, 1),
-                        ),
-                      ],
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    sliver: SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final item =
+                              storageService.favorites.take(3).toList()[index];
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: QrCard(
+                              item: item,
+                              showDelete: false,
+                              onFavoriteToggle: () async {
+                                await storageService.toggleFavorite(item.id);
+                              },
+                              onEdit: () => _openEdit(context, item),
+                              onDuplicate: () => _duplicateItem(context, item),
+                              onRegenerate: () => _openEdit(context, item),
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => QrPreviewScreen(
+                                      item: item,
+                                      storageService: storageService,
+                                      onEdit: () => _openEdit(context, item),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          );
+                        },
+                        childCount: storageService.favorites.take(3).length,
+                      ),
                     ),
                   ),
-                ),
+                ],
 
-                // Recent Activity / Scans Section
+                // ==========================================
+                // 4. ACTIVITY: RECENT SCANS
+                // ==========================================
                 if (recentScans.isNotEmpty) ...[
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
+                      padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -620,7 +688,7 @@ class HomeScreen extends StatelessWidget {
                     ),
                   ),
                   SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 30),
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
                     sliver: SliverList(
                       delegate: SliverChildBuilderDelegate(
                         (context, index) {
@@ -688,11 +756,59 @@ class HomeScreen extends StatelessWidget {
                       ),
                     ),
                   ),
-                ] else ...[
-                  const SliverToBoxAdapter(
-                    child: SizedBox(height: 30),
-                  ),
                 ],
+
+                // ==========================================
+                // 5. STATISTICS DASHBOARD
+                // ==========================================
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 22, 20, 8),
+                    child: Text(
+                      'Overview & Statistics',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.2,
+                          ),
+                    ),
+                  ),
+                ),
+
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 2, 20, 30),
+                    child: Row(
+                      children: [
+                        _buildStatCard(
+                          context: context,
+                          label: 'Generated',
+                          value: '${storageService.totalGenerated}',
+                          icon: Icons.qr_code_rounded,
+                          color: AppColors.primary,
+                          onTap: () => onNavigateToTab(2, null, 0),
+                        ),
+                        const SizedBox(width: 10),
+                        _buildStatCard(
+                          context: context,
+                          label: 'Total Scans',
+                          value: '${storageService.totalScans}',
+                          icon: Icons.camera_alt_rounded,
+                          color: AppColors.secondary,
+                          onTap: () => onNavigateToTab(2, null, 2),
+                        ),
+                        const SizedBox(width: 10),
+                        _buildStatCard(
+                          context: context,
+                          label: 'Favorites',
+                          value: '${storageService.totalFavorites}',
+                          icon: Icons.favorite_rounded,
+                          color: AppColors.error,
+                          onTap: () => onNavigateToTab(2, null, 1),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             );
           },

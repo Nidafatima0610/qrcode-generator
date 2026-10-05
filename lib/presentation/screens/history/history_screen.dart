@@ -137,13 +137,16 @@ class HistoryScreenState extends State<HistoryScreen>
     final messenger = ScaffoldMessenger.of(context);
     final count = _selectedItemIds.length;
     if (count == 0) return;
+    final isScans = _tabController.index == 2;
 
     showDialog(
       context: context,
       builder: (dialogCtx) => AlertDialog(
         title: Text('Delete $count Selected Items?'),
         content: Text(
-          'Are you sure you want to delete $count selected QR codes? This action cannot be undone.',
+          isScans
+              ? 'Are you sure you want to delete $count selected scan records? This action cannot be undone.'
+              : 'Are you sure you want to delete $count selected QR codes? This action cannot be undone.',
         ),
         actions: [
           TextButton(
@@ -157,8 +160,13 @@ class HistoryScreenState extends State<HistoryScreen>
             ),
             onPressed: () async {
               Navigator.pop(dialogCtx);
-              await widget.storageService
-                  .deleteMultiple(_selectedItemIds.toList());
+              if (isScans) {
+                await widget.storageService
+                    .deleteMultipleScanItems(_selectedItemIds.toList());
+              } else {
+                await widget.storageService
+                    .deleteMultiple(_selectedItemIds.toList());
+              }
               setState(() {
                 _isSelectionMode = false;
                 _selectedItemIds.clear();
@@ -346,7 +354,7 @@ class HistoryScreenState extends State<HistoryScreen>
   List<ScanItem> _filterScanItems(List<ScanItem> items) {
     final query = _searchController.text.trim().toLowerCase();
 
-    return items.where((item) {
+    var filtered = items.where((item) {
       final matchesType = _selectedFilterType == null ||
           item.detectedType == _selectedFilterType;
       final matchesSearch = query.isEmpty ||
@@ -356,6 +364,21 @@ class HistoryScreenState extends State<HistoryScreen>
           item.detectedType.label.toLowerCase().contains(query);
       return matchesType && matchesSearch;
     }).toList();
+
+    switch (_currentSort) {
+      case HistorySortOption.newest:
+        filtered.sort((a, b) => b.scannedAt.compareTo(a.scannedAt));
+        break;
+      case HistorySortOption.oldest:
+        filtered.sort((a, b) => a.scannedAt.compareTo(b.scannedAt));
+        break;
+      case HistorySortOption.alphabetical:
+        filtered.sort(
+            (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+        break;
+    }
+
+    return filtered;
   }
 
   void _duplicateItem(QrItem item) async {
@@ -414,7 +437,10 @@ class HistoryScreenState extends State<HistoryScreen>
         final scanItems = widget.storageService.scanHistory;
 
         final isFavTab = _tabController.index == 1;
-        final currentActiveItems = isFavTab ? favoriteItems : generatedItems;
+        final isScansTab = _tabController.index == 2;
+        final List<dynamic> currentActiveItems = isScansTab
+            ? scanItems
+            : (isFavTab ? favoriteItems : generatedItems);
 
         return Scaffold(
           appBar: AppBar(
@@ -450,61 +476,63 @@ class HistoryScreenState extends State<HistoryScreen>
                         _selectedItemIds.clear();
                       } else {
                         _selectedItemIds.addAll(
-                            currentActiveItems.map((e) => e.id));
+                            currentActiveItems.map((e) => e.id as String));
                       }
                     });
                   },
                 ),
-                // Favorite / Unfavorite selected
-                if (!isFavTab)
-                  IconButton(
-                    icon: const Icon(Icons.favorite_rounded,
-                        color: AppColors.error),
-                    tooltip: 'Favorite Selected',
-                    onPressed: _selectedItemIds.isEmpty
-                        ? null
-                        : () async {
-                            await widget.storageService.toggleFavoritesBulk(
-                                _selectedItemIds.toList(), true);
-                            setState(() {
-                              _isSelectionMode = false;
-                              _selectedItemIds.clear();
-                            });
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Marked selected as favorites'),
-                                  behavior: SnackBarBehavior.floating,
-                                ),
-                              );
-                            }
-                          },
-                  )
-                else
-                  IconButton(
-                    icon: const Icon(Icons.favorite_border_rounded,
-                        color: Colors.amber),
-                    tooltip: 'Unfavorite Selected',
-                    onPressed: _selectedItemIds.isEmpty
-                        ? null
-                        : () async {
-                            await widget.storageService.toggleFavoritesBulk(
-                                _selectedItemIds.toList(), false);
-                            setState(() {
-                              _isSelectionMode = false;
-                              _selectedItemIds.clear();
-                            });
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                      'Removed from favorites (kept in history)'),
-                                  behavior: SnackBarBehavior.floating,
-                                ),
-                              );
-                            }
-                          },
-                  ),
+                // Favorite / Unfavorite selected (only on Generated and Favorites tabs)
+                if (!isScansTab) ...[
+                  if (!isFavTab)
+                    IconButton(
+                      icon: const Icon(Icons.favorite_rounded,
+                          color: AppColors.error),
+                      tooltip: 'Favorite Selected',
+                      onPressed: _selectedItemIds.isEmpty
+                          ? null
+                          : () async {
+                              await widget.storageService.toggleFavoritesBulk(
+                                  _selectedItemIds.toList(), true);
+                              setState(() {
+                                _isSelectionMode = false;
+                                _selectedItemIds.clear();
+                              });
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Marked selected as favorites'),
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
+                              }
+                            },
+                    )
+                  else
+                    IconButton(
+                      icon: const Icon(Icons.favorite_border_rounded,
+                          color: Colors.amber),
+                      tooltip: 'Unfavorite Selected',
+                      onPressed: _selectedItemIds.isEmpty
+                          ? null
+                          : () async {
+                              await widget.storageService.toggleFavoritesBulk(
+                                  _selectedItemIds.toList(), false);
+                              setState(() {
+                                _isSelectionMode = false;
+                                _selectedItemIds.clear();
+                              });
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                        'Removed from favorites (kept in history)'),
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
+                              }
+                            },
+                    ),
+                ],
                 // Delete selected
                 IconButton(
                   icon:
@@ -542,9 +570,8 @@ class HistoryScreenState extends State<HistoryScreen>
                   }).toList(),
                 ),
 
-                // Multi-select toggle button (for Generated and Favorites tabs)
-                if (_tabController.index != 2 &&
-                    currentActiveItems.isNotEmpty)
+                // Multi-select toggle button (for all tabs when active list is not empty)
+                if (currentActiveItems.isNotEmpty)
                   IconButton(
                     icon: const Icon(Icons.checklist_rounded),
                     tooltip: 'Select Multiple',
@@ -575,6 +602,8 @@ class HistoryScreenState extends State<HistoryScreen>
             ],
             bottom: TabBar(
               controller: _tabController,
+              isScrollable: true,
+              tabAlignment: TabAlignment.center,
               indicatorColor: AppColors.primary,
               labelColor: AppColors.primary,
               unselectedLabelColor: isDark
@@ -900,31 +929,65 @@ class HistoryScreenState extends State<HistoryScreen>
         final typeColor = item.detectedType.color;
         final formattedDate =
             DateFormat('MMM d, y • h:mm a').format(item.scannedAt);
+        final isSelected = _selectedItemIds.contains(item.id);
 
         return Card(
           clipBehavior: Clip.antiAlias,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
             side: BorderSide(
-              color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+              color: isSelected
+                  ? AppColors.primary
+                  : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
+              width: isSelected ? 1.8 : 1,
             ),
           ),
           child: InkWell(
             onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => ScanResultScreen(
-                    scanItem: item,
-                    storageService: widget.storageService,
+              if (_isSelectionMode) {
+                setState(() {
+                  if (isSelected) {
+                    _selectedItemIds.remove(item.id);
+                  } else {
+                    _selectedItemIds.add(item.id);
+                  }
+                });
+              } else {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ScanResultScreen(
+                      scanItem: item,
+                      storageService: widget.storageService,
+                    ),
                   ),
-                ),
-              );
+                );
+              }
             },
             child: Padding(
               padding: const EdgeInsets.all(14),
               child: Row(
                 children: [
+                  if (_isSelectionMode) ...[
+                    Checkbox(
+                      value: isSelected,
+                      activeColor: AppColors.primary,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      onChanged: (val) {
+                        setState(() {
+                          if (val == true) {
+                            _selectedItemIds.add(item.id);
+                          } else {
+                            _selectedItemIds.remove(item.id);
+                          }
+                        });
+                      },
+                    ),
+                    const SizedBox(width: 4),
+                  ],
+
                   // Type Icon Container
                   Container(
                     padding: const EdgeInsets.all(10),
@@ -1000,14 +1063,16 @@ class HistoryScreenState extends State<HistoryScreen>
                     ),
                   ),
 
-                  // Delete Scan Record
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline_rounded, size: 19),
-                    tooltip: 'Delete scan record',
-                    onPressed: () async {
-                      await widget.storageService.deleteScanItem(item.id);
-                    },
-                  ),
+                  if (!_isSelectionMode) ...[
+                    // Delete Scan Record
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline_rounded, size: 19),
+                      tooltip: 'Delete scan record',
+                      onPressed: () async {
+                        await widget.storageService.deleteScanItem(item.id);
+                      },
+                    ),
+                  ],
                 ],
               ),
             ),

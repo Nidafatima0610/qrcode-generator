@@ -40,6 +40,7 @@ class BulkCreateScreen extends StatefulWidget {
 }
 
 class _BulkCreateScreenState extends State<BulkCreateScreen> {
+  static const int maxBulkRows = 50;
   final List<BulkEntryRow> _rows = [];
 
   @override
@@ -59,7 +60,35 @@ class _BulkCreateScreenState extends State<BulkCreateScreen> {
     super.dispose();
   }
 
+  void _showMaxLimitDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.info_outline_rounded, color: AppColors.warning),
+            SizedBox(width: 8),
+            Text('Bulk Limit Reached'),
+          ],
+        ),
+        content: const Text(
+          'To ensure optimal mobile rendering and prevent memory strain, a maximum of 50 QR codes can be generated simultaneously. Please generate or clear existing items before adding more.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _addRow({String initialTitle = '', String initialContent = ''}) {
+    if (_rows.length >= maxBulkRows) {
+      _showMaxLimitDialog();
+      return;
+    }
     final row = BulkEntryRow(
       id: const Uuid().v4(),
       initialTitle: initialTitle,
@@ -114,7 +143,7 @@ class _BulkCreateScreenState extends State<BulkCreateScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Paste rows below. Each line can be formatted as:\n"Title, URL" or just "Content / URL"',
+                'Paste rows below (max 50 total). Each line can be formatted as:\n"Title, URL" or just "Content / URL"',
                 style: TextStyle(fontSize: 12.5, color: Colors.grey),
               ),
               const SizedBox(height: 12),
@@ -139,9 +168,14 @@ class _BulkCreateScreenState extends State<BulkCreateScreen> {
               if (raw.isNotEmpty) {
                 final lines = raw.split('\n');
                 int added = 0;
+                bool limitHit = false;
                 for (final line in lines) {
                   final trimmed = line.trim();
                   if (trimmed.isEmpty) continue;
+                  if (_rows.length >= maxBulkRows) {
+                    limitHit = true;
+                    break;
+                  }
                   if (trimmed.contains(',')) {
                     final parts = trimmed.split(',');
                     final title = parts.first.trim();
@@ -153,12 +187,22 @@ class _BulkCreateScreenState extends State<BulkCreateScreen> {
                   added++;
                 }
                 Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Imported $added rows'),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
+                if (limitHit) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Imported $added rows. Reached the $maxBulkRows-row mobile limit.'),
+                      behavior: SnackBarBehavior.floating,
+                      backgroundColor: AppColors.warning,
+                    ),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Imported $added rows'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
               }
             },
             child: const Text('Import Rows'),

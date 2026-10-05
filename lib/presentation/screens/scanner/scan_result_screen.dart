@@ -322,142 +322,317 @@ class ScanResultScreen extends StatelessWidget {
     );
   }
 
+  Future<void> _confirmAndLaunch(
+    BuildContext context, {
+    required String title,
+    required String actionLabel,
+    required String targetDescription,
+    required String url,
+    required IconData icon,
+    Color? iconColor,
+  }) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(icon, color: iconColor ?? AppColors.primary, size: 22),
+            const SizedBox(width: 10),
+            Expanded(child: Text(title, style: const TextStyle(fontSize: 17))),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Are you sure you want to proceed with this external action?',
+              style: TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Theme.of(ctx).brightness == Brightness.dark
+                    ? Colors.black26
+                    : Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: Theme.of(ctx).brightness == Brightness.dark
+                      ? AppColors.darkBorder
+                      : AppColors.lightBorder,
+                ),
+              ),
+              child: SelectableText(
+                targetDescription,
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: iconColor ?? AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(actionLabel),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await QrSharingService.launchExternalUrl(url);
+    }
+  }
+
   Widget _buildSmartAction(
       BuildContext context, ParsedQrContent parsed, Color typeColor) {
+    void copyDefault() {
+      QrSharingService.copyToClipboard(
+        context,
+        scanItem.rawContent,
+        message: 'Content copied to clipboard!',
+      );
+    }
+
+    void shareDefault() {
+      QrSharingService.shareText(
+        text: scanItem.rawContent,
+        subject: parsed.displayTitle,
+      );
+    }
+
+    Widget actionWithCopyShare(Widget primaryAction,
+        {VoidCallback? onCopy, VoidCallback? onShare}) {
+      return Column(
+        children: [
+          primaryAction,
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onCopy ?? copyDefault,
+                  icon: const Icon(Icons.copy_rounded, size: 18),
+                  label: const Text('Copy'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onShare ?? shareDefault,
+                  icon: const Icon(Icons.share_rounded, size: 18),
+                  label: const Text('Share'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+
     switch (parsed.type) {
       case QrType.url:
       case QrType.social:
         final url = parsed.actionUrl ?? parsed.rawPayload;
-        return SizedBox(
-          width: double.infinity,
-          height: 48,
-          child: ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: typeColor,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () {
-              QrSharingService.launchExternalUrl(url);
-            },
-            icon: const Icon(Icons.open_in_browser_rounded, size: 20),
-            label: const Text(
-              'Open Website in Browser',
-              style: TextStyle(fontWeight: FontWeight.w700),
+        return actionWithCopyShare(
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: typeColor,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                _confirmAndLaunch(
+                  context,
+                  title: 'Open Website?',
+                  actionLabel: 'Open in Browser',
+                  targetDescription: url,
+                  url: url,
+                  icon: Icons.open_in_browser_rounded,
+                  iconColor: typeColor,
+                );
+              },
+              icon: const Icon(Icons.open_in_browser_rounded, size: 20),
+              label: const Text(
+                'Open Website in Browser',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
             ),
           ),
         );
 
       case QrType.phone:
         final phoneUrl = parsed.actionUrl ?? 'tel:${parsed.rawPayload}';
-        return SizedBox(
-          width: double.infinity,
-          height: 48,
-          child: ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: typeColor,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () {
-              QrSharingService.launchExternalUrl(phoneUrl);
-            },
-            icon: const Icon(Icons.phone_in_talk_rounded, size: 20),
-            label: const Text(
-              'Call Number',
-              style: TextStyle(fontWeight: FontWeight.w700),
+        return actionWithCopyShare(
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: typeColor,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                _confirmAndLaunch(
+                  context,
+                  title: 'Place Phone Call?',
+                  actionLabel: 'Call Number',
+                  targetDescription: parsed.rawPayload,
+                  url: phoneUrl,
+                  icon: Icons.phone_in_talk_rounded,
+                  iconColor: typeColor,
+                );
+              },
+              icon: const Icon(Icons.phone_in_talk_rounded, size: 20),
+              label: const Text(
+                'Call Number',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
             ),
           ),
         );
 
       case QrType.email:
         final emailUrl = parsed.actionUrl ?? 'mailto:${parsed.rawPayload}';
-        return SizedBox(
-          width: double.infinity,
-          height: 48,
-          child: ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: typeColor,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () {
-              QrSharingService.launchExternalUrl(emailUrl);
-            },
-            icon: const Icon(Icons.mail_outline_rounded, size: 20),
-            label: const Text(
-              'Compose Email',
-              style: TextStyle(fontWeight: FontWeight.w700),
+        return actionWithCopyShare(
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: typeColor,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                _confirmAndLaunch(
+                  context,
+                  title: 'Compose Email?',
+                  actionLabel: 'Open Email App',
+                  targetDescription: parsed.rawPayload,
+                  url: emailUrl,
+                  icon: Icons.mail_outline_rounded,
+                  iconColor: typeColor,
+                );
+              },
+              icon: const Icon(Icons.mail_outline_rounded, size: 20),
+              label: const Text(
+                'Compose Email',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
             ),
           ),
         );
 
       case QrType.sms:
         final smsUrl = parsed.actionUrl ?? 'smsto:${parsed.rawPayload}';
-        return SizedBox(
-          width: double.infinity,
-          height: 48,
-          child: ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: typeColor,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () {
-              QrSharingService.launchExternalUrl(smsUrl);
-            },
-            icon: const Icon(Icons.sms_outlined, size: 20),
-            label: const Text(
-              'Send SMS Message',
-              style: TextStyle(fontWeight: FontWeight.w700),
+        return actionWithCopyShare(
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: typeColor,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                _confirmAndLaunch(
+                  context,
+                  title: 'Send SMS Message?',
+                  actionLabel: 'Open Messages App',
+                  targetDescription: parsed.rawPayload,
+                  url: smsUrl,
+                  icon: Icons.sms_outlined,
+                  iconColor: typeColor,
+                );
+              },
+              icon: const Icon(Icons.sms_outlined, size: 20),
+              label: const Text(
+                'Send SMS Message',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
             ),
           ),
         );
 
       case QrType.location:
         final mapUrl = parsed.actionUrl ?? parsed.rawPayload;
-        return SizedBox(
-          width: double.infinity,
-          height: 48,
-          child: ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: typeColor,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () {
-              QrSharingService.launchExternalUrl(mapUrl);
-            },
-            icon: const Icon(Icons.map_rounded, size: 20),
-            label: const Text(
-              'Open Location in Maps',
-              style: TextStyle(fontWeight: FontWeight.w700),
+        return actionWithCopyShare(
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: typeColor,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                _confirmAndLaunch(
+                  context,
+                  title: 'Open in Maps?',
+                  actionLabel: 'Launch Maps',
+                  targetDescription: parsed.rawPayload,
+                  url: mapUrl,
+                  icon: Icons.map_rounded,
+                  iconColor: typeColor,
+                );
+              },
+              icon: const Icon(Icons.map_rounded, size: 20),
+              label: const Text(
+                'Open Location in Maps',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
             ),
           ),
         );
 
       case QrType.contact:
         final phone = parsed.details['Phone'];
-        return SizedBox(
-          width: double.infinity,
-          height: 48,
-          child: ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: typeColor,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () {
-              if (phone != null && phone.isNotEmpty) {
-                QrSharingService.launchExternalUrl('tel:$phone');
-              } else {
-                QrSharingService.copyToClipboard(
-                  context,
-                  parsed.rawPayload,
-                  message: 'Contact vCard copied to clipboard!',
-                );
-              }
-            },
-            icon: const Icon(Icons.contact_phone_rounded, size: 20),
-            label: Text(
-              phone != null && phone.isNotEmpty
-                  ? 'Call Contact ($phone)'
-                  : 'Copy Contact Details',
-              style: const TextStyle(fontWeight: FontWeight.w700),
+        return actionWithCopyShare(
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: typeColor,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                if (phone != null && phone.isNotEmpty) {
+                  _confirmAndLaunch(
+                    context,
+                    title: 'Call Contact?',
+                    actionLabel: 'Call $phone',
+                    targetDescription:
+                        '${parsed.displayTitle}\nPhone: $phone',
+                    url: 'tel:$phone',
+                    icon: Icons.phone_in_talk_rounded,
+                    iconColor: typeColor,
+                  );
+                } else {
+                  copyDefault();
+                }
+              },
+              icon: const Icon(Icons.contact_phone_rounded, size: 20),
+              label: Text(
+                phone != null && phone.isNotEmpty
+                    ? 'Call Contact ($phone)'
+                    : 'Copy Contact Details',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
             ),
           ),
         );
@@ -465,33 +640,51 @@ class ScanResultScreen extends StatelessWidget {
       case QrType.businessCard:
         final phone = parsed.details['Phone'];
         final website = parsed.details['Website'];
-        return SizedBox(
-          width: double.infinity,
-          height: 48,
-          child: ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: typeColor,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () {
-              if (phone != null && phone.isNotEmpty) {
-                QrSharingService.launchExternalUrl('tel:$phone');
-              } else if (website != null && website.isNotEmpty) {
-                QrSharingService.launchExternalUrl(website.startsWith('http') ? website : 'https://$website');
-              } else {
-                QrSharingService.copyToClipboard(
-                  context,
-                  parsed.rawPayload,
-                  message: 'Business Card copied to clipboard!',
-                );
-              }
-            },
-            icon: const Icon(Icons.badge_rounded, size: 20),
-            label: Text(
-              phone != null && phone.isNotEmpty
-                  ? 'Call ($phone)'
-                  : 'Open Business Card',
-              style: const TextStyle(fontWeight: FontWeight.w700),
+        return actionWithCopyShare(
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: typeColor,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                if (phone != null && phone.isNotEmpty) {
+                  _confirmAndLaunch(
+                    context,
+                    title: 'Call Business?',
+                    actionLabel: 'Call $phone',
+                    targetDescription:
+                        '${parsed.displayTitle}\nPhone: $phone',
+                    url: 'tel:$phone',
+                    icon: Icons.phone_in_talk_rounded,
+                    iconColor: typeColor,
+                  );
+                } else if (website != null && website.isNotEmpty) {
+                  final webUrl = website.startsWith('http')
+                      ? website
+                      : 'https://$website';
+                  _confirmAndLaunch(
+                    context,
+                    title: 'Visit Business Website?',
+                    actionLabel: 'Open Website',
+                    targetDescription: webUrl,
+                    url: webUrl,
+                    icon: Icons.open_in_browser_rounded,
+                    iconColor: typeColor,
+                  );
+                } else {
+                  copyDefault();
+                }
+              },
+              icon: const Icon(Icons.badge_rounded, size: 20),
+              label: Text(
+                phone != null && phone.isNotEmpty
+                    ? 'Call ($phone)'
+                    : 'Open Business Card',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
             ),
           ),
         );
@@ -499,86 +692,126 @@ class ScanResultScreen extends StatelessWidget {
       case QrType.businessInfo:
         final phone = parsed.details['Phone'];
         final website = parsed.details['Website'];
-        return SizedBox(
-          width: double.infinity,
-          height: 48,
-          child: ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: typeColor,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () {
-              if (phone != null && phone.isNotEmpty) {
-                QrSharingService.launchExternalUrl('tel:$phone');
-              } else if (website != null && website.isNotEmpty) {
-                QrSharingService.launchExternalUrl(website.startsWith('http') ? website : 'https://$website');
-              } else {
-                QrSharingService.copyToClipboard(
-                  context,
-                  parsed.rawPayload,
-                  message: 'Business Info copied to clipboard!',
-                );
-              }
-            },
-            icon: const Icon(Icons.storefront_rounded, size: 20),
-            label: Text(
-              phone != null && phone.isNotEmpty
-                  ? 'Contact Business ($phone)'
-                  : 'View Business Info',
-              style: const TextStyle(fontWeight: FontWeight.w700),
+        return actionWithCopyShare(
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: typeColor,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                if (phone != null && phone.isNotEmpty) {
+                  _confirmAndLaunch(
+                    context,
+                    title: 'Contact Business?',
+                    actionLabel: 'Call $phone',
+                    targetDescription:
+                        '${parsed.displayTitle}\nPhone: $phone',
+                    url: 'tel:$phone',
+                    icon: Icons.phone_in_talk_rounded,
+                    iconColor: typeColor,
+                  );
+                } else if (website != null && website.isNotEmpty) {
+                  final webUrl = website.startsWith('http')
+                      ? website
+                      : 'https://$website';
+                  _confirmAndLaunch(
+                    context,
+                    title: 'Visit Business Website?',
+                    actionLabel: 'Open Website',
+                    targetDescription: webUrl,
+                    url: webUrl,
+                    icon: Icons.open_in_browser_rounded,
+                    iconColor: typeColor,
+                  );
+                } else {
+                  copyDefault();
+                }
+              },
+              icon: const Icon(Icons.storefront_rounded, size: 20),
+              label: Text(
+                phone != null && phone.isNotEmpty
+                    ? 'Contact Business ($phone)'
+                    : 'View Business Info',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
             ),
           ),
         );
 
       case QrType.wifi:
         final pass = parsed.details['Password'] ?? '';
-        return SizedBox(
-          width: double.infinity,
-          height: 48,
-          child: ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: typeColor,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () {
-              QrSharingService.copyToClipboard(
-                context,
-                pass.isNotEmpty ? pass : parsed.rawPayload,
-                message: pass.isNotEmpty
-                    ? 'Wi-Fi Password copied to clipboard!'
-                    : 'Wi-Fi details copied!',
-              );
-            },
-            icon: const Icon(Icons.copy_rounded, size: 20),
-            label: Text(
-              pass.isNotEmpty ? 'Copy Wi-Fi Password' : 'Copy Network Info',
-              style: const TextStyle(fontWeight: FontWeight.w700),
+        return actionWithCopyShare(
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: typeColor,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                QrSharingService.copyToClipboard(
+                  context,
+                  pass.isNotEmpty ? pass : parsed.rawPayload,
+                  message: pass.isNotEmpty
+                      ? 'Wi-Fi Password copied to clipboard!'
+                      : 'Wi-Fi details copied!',
+                );
+              },
+              icon: const Icon(Icons.copy_rounded, size: 20),
+              label: Text(
+                pass.isNotEmpty ? 'Copy Wi-Fi Password' : 'Copy Network Info',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
             ),
           ),
+          onCopy: () {
+            QrSharingService.copyToClipboard(
+              context,
+              pass.isNotEmpty ? pass : parsed.rawPayload,
+              message: pass.isNotEmpty
+                  ? 'Wi-Fi Password copied!'
+                  : 'Wi-Fi network details copied!',
+            );
+          },
         );
 
       case QrType.text:
-        return SizedBox(
-          width: double.infinity,
-          height: 48,
-          child: ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
+        return Row(
+          children: [
+            Expanded(
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                onPressed: copyDefault,
+                icon: const Icon(Icons.copy_rounded, size: 18),
+                label: const Text(
+                  'Copy Plain Text',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
             ),
-            onPressed: () {
-              QrSharingService.copyToClipboard(
-                context,
-                parsed.rawPayload,
-                message: 'Text copied to clipboard!',
-              );
-            },
-            icon: const Icon(Icons.copy_rounded, size: 20),
-            label: const Text(
-              'Copy Plain Text',
-              style: TextStyle(fontWeight: FontWeight.w700),
+            const SizedBox(width: 10),
+            Expanded(
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                onPressed: shareDefault,
+                icon: const Icon(Icons.share_rounded, size: 18),
+                label: const Text(
+                  'Share Text',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
             ),
-          ),
+          ],
         );
     }
   }
