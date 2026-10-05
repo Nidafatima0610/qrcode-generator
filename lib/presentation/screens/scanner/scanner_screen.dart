@@ -31,10 +31,11 @@ class _ScannerScreenState extends State<ScannerScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _isTorchOn = widget.storageService.scannerTorchDefault;
     _controller = MobileScannerController(
       detectionSpeed: DetectionSpeed.noDuplicates,
       facing: CameraFacing.back,
-      torchEnabled: false,
+      torchEnabled: widget.storageService.scannerTorchDefault,
     );
   }
 

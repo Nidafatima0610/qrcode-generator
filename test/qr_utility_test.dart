@@ -274,5 +274,164 @@ void main() {
       expect(service.scanHistory.length, 0);
       expect(service.totalScans, 0);
     });
+
+    test('Rapid scan duplicate suppression within 3 seconds', () async {
+      final service = await StorageService.init();
+
+      final scan1 = ScanItem(
+        id: 'rapid_1',
+        rawContent: 'https://fastscan.com',
+        detectedType: QrType.url,
+        title: 'fastscan.com',
+        subtitle: 'https://fastscan.com',
+        scannedAt: DateTime.now(),
+      );
+
+      final scanRapidDuplicate = ScanItem(
+        id: 'rapid_2',
+        rawContent: 'https://fastscan.com',
+        detectedType: QrType.url,
+        title: 'fastscan.com',
+        subtitle: 'https://fastscan.com',
+        scannedAt: DateTime.now(),
+      );
+
+      await service.saveScanItem(scan1);
+      // Immediately second callback with same content
+      await service.saveScanItem(scanRapidDuplicate);
+
+      expect(service.scanHistory.length, 1);
+      expect(service.scanHistory.first.id, 'rapid_1');
+    });
+
+    test('Collections management and safe deletion', () async {
+      final service = await StorageService.init();
+
+      await service.createCollection('Work');
+      await service.createCollection('Personal');
+      expect(service.collections.contains('Work'), true);
+      expect(service.collections.contains('Personal'), true);
+
+      final item = QrItem(
+        id: 'col_item_1',
+        type: QrType.url,
+        title: 'Work Portal',
+        subtitle: 'https://work.com',
+        rawPayload: 'https://work.com',
+        createdAt: DateTime.now(),
+      );
+      await service.saveItem(item);
+      await service.assignCollection(item.id, 'Work');
+
+      expect(service.history.first.collection, 'Work');
+
+      // Rename collection
+      await service.renameCollection('Work', 'Office');
+      expect(service.collections.contains('Office'), true);
+      expect(service.collections.contains('Work'), false);
+      expect(service.history.first.collection, 'Office');
+
+      // Delete collection must NOT delete the QR code itself
+      await service.deleteCollection('Office');
+      expect(service.collections.contains('Office'), false);
+      expect(service.history.length, 1);
+      expect(service.history.first.id, 'col_item_1');
+      expect(service.history.first.collection, null);
+    });
+
+    test('Notes support on QR items', () async {
+      final service = await StorageService.init();
+
+      final item = QrItem(
+        id: 'note_item_1',
+        type: QrType.wifi,
+        title: 'HQ Guest',
+        subtitle: 'Wi-Fi Network',
+        rawPayload: 'WIFI:S:HQGuest;T:WPA;P:Guest123;;',
+        createdAt: DateTime.now(),
+      );
+      await service.saveItem(item);
+      expect(service.history.first.note, null);
+
+      await service.updateItemNote(item.id, 'For meeting room 3B');
+      expect(service.history.first.note, 'For meeting room 3B');
+
+      await service.updateItemNote(item.id, null);
+      expect(service.history.first.note, null);
+    });
+
+    test('High Contrast Preset and Contrast Ratio Readability', () {
+      final highContrastPreset = QrDesignPreset.builtInPresets
+          .firstWhere((p) => p.id == 'high_contrast');
+      expect(highContrastPreset.customization.foregroundColor, Colors.black);
+      expect(highContrastPreset.customization.backgroundColor, Colors.white);
+      expect(highContrastPreset.customization.errorCorrectionLevel, 'H');
+      expect(highContrastPreset.customization.hasSufficientContrast, true);
+      expect(highContrastPreset.customization.contrastRatio, greaterThan(15.0));
+
+      // Test bad contrast (white on light yellow)
+      const lowContrast = QrCustomization(
+        foregroundColor: Color(0xFFFFFFFE),
+        backgroundColor: Color(0xFFFFFBEB),
+      );
+      expect(lowContrast.hasSufficientContrast, false);
+      expect(lowContrast.contrastRatio, lessThan(3.0));
+    });
+
+    test('Backup & Restore JSON Schema v2', () async {
+      final service = await StorageService.init();
+
+      await service.createCollection('TestCol');
+      final item = QrItem(
+        id: 'backup_qr_1',
+        type: QrType.text,
+        title: 'Backup Test',
+        subtitle: 'Sub text',
+        rawPayload: 'Payload 123',
+        createdAt: DateTime.now(),
+        note: 'Important note',
+        collection: 'TestCol',
+      );
+      await service.saveItem(item);
+
+      final scan = ScanItem(
+        id: 'backup_scan_1',
+        rawContent: 'https://scanned-backup.com',
+        detectedType: QrType.url,
+        title: 'scanned-backup.com',
+        subtitle: 'https://scanned-backup.com',
+        scannedAt: DateTime.now(),
+      );
+      await service.saveScanItem(scan);
+
+      // Export
+      final jsonBackup = service.exportBackupJson();
+      expect(jsonBackup, contains('"schemaVersion": 2'));
+      expect(jsonBackup, contains('backup_qr_1'));
+      expect(jsonBackup, contains('Important note'));
+      expect(jsonBackup, contains('TestCol'));
+      expect(jsonBackup, contains('backup_scan_1'));
+
+      // Test invalid restore
+      final badResult = await service.importBackupJson('not a json');
+      expect(badResult.success, false);
+
+      // Clear all and test restore in replace mode
+      await service.clearHistory(preserveFavorites: false);
+      await service.clearScanHistory();
+      expect(service.history.isEmpty, true);
+      expect(service.scanHistory.isEmpty, true);
+
+      final restoreResult = await service.importBackupJson(jsonBackup, replace: true);
+      expect(restoreResult.success, true);
+      expect(restoreResult.importedHistory, 1);
+      expect(restoreResult.importedScans, 1);
+      expect(service.history.length, 1);
+      expect(service.history.first.title, 'Backup Test');
+      expect(service.history.first.note, 'Important note');
+      expect(service.history.first.collection, 'TestCol');
+      expect(service.scanHistory.length, 1);
+      expect(service.collections.contains('TestCol'), true);
+    });
   });
 }

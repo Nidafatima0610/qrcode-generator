@@ -65,10 +65,83 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
       );
     }
   }
+  Future<void> _checkContrastAndProceed(Future<void> Function() onProceed) async {
+    if (_currentItem.customization.hasSufficientContrast) {
+      await onProceed();
+      return;
+    }
+
+    final ratio = _currentItem.customization.contrastRatio.toStringAsFixed(1);
+    final action = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: AppColors.warning, size: 24),
+            SizedBox(width: 8),
+            Text('Low Contrast Warning'),
+          ],
+        ),
+        content: Text(
+          'This QR code has low foreground/background contrast ($ratio:1, recommended ≥ 3.0:1).\n\nSome scanners may have trouble scanning it. Would you like to switch to High Contrast before exporting, or proceed anyway?',
+          style: const TextStyle(fontSize: 13.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'cancel'),
+            child: const Text('Cancel'),
+          ),
+          OutlinedButton(
+            onPressed: () => Navigator.pop(ctx, 'proceed'),
+            child: const Text('Proceed Anyway'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, 'fix'),
+            child: const Text('Fix to High Contrast'),
+          ),
+        ],
+      ),
+    );
+
+    if (action == 'fix') {
+      _applyHighContrast();
+      await Future.delayed(const Duration(milliseconds: 150));
+      await onProceed();
+    } else if (action == 'proceed') {
+      await onProceed();
+    }
+  }
+
+  void _applyHighContrast() async {
+    final updated = _currentItem.copyWith(
+      customization: _currentItem.customization.copyWith(
+        foregroundColor: Colors.black,
+        backgroundColor: Colors.white,
+        errorCorrectionLevel: 'H',
+      ),
+    );
+    await widget.storageService.saveItem(updated);
+    setState(() {
+      _currentItem = updated;
+    });
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Applied High Contrast design (readable & scannable)'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
 
   Future<void> _saveQrImage() async {
-    if (_isSaving) return;
-    setState(() => _isSaving = true);
+    await _checkContrastAndProceed(() async {
+      if (_isSaving) return;
+      setState(() => _isSaving = true);
 
     try {
       final savedPath = await QrSharingService.saveQrImageToDevice(
@@ -113,11 +186,13 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
         setState(() => _isSaving = false);
       }
     }
+    });
   }
 
   Future<void> _shareQrImage() async {
-    if (_isSharing) return;
-    setState(() => _isSharing = true);
+    await _checkContrastAndProceed(() async {
+      if (_isSharing) return;
+      setState(() => _isSharing = true);
 
     try {
       final success = await QrSharingService.shareQrImage(
@@ -139,6 +214,7 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
         setState(() => _isSharing = false);
       }
     }
+    });
   }
 
   void _copyContent() {
@@ -200,6 +276,245 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
         ),
       );
     }
+  }
+
+  void _useAsTemplate() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CreateScreen(
+          storageService: widget.storageService,
+          initialType: _currentItem.type,
+          initialValues: _currentItem.formData,
+        ),
+      ),
+    );
+  }
+
+  void _editNote() {
+    final noteController = TextEditingController(text: _currentItem.note ?? '');
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit Note'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Add a personal label or reminder for this QR code (e.g., "Office Wi-Fi", "Event Registration").',
+              style: TextStyle(fontSize: 12.5, color: Colors.grey),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: noteController,
+              autofocus: true,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: 'Note / Description',
+                hintText: 'Enter short note...',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          if (_currentItem.note != null && _currentItem.note!.isNotEmpty)
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                await widget.storageService
+                    .updateItemNote(_currentItem.id, null);
+                setState(() {
+                  _currentItem = _currentItem.copyWith(clearNote: true);
+                });
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Note removed'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              },
+              child: const Text('Remove Note',
+                  style: TextStyle(color: AppColors.error)),
+            ),
+          ElevatedButton(
+            onPressed: () async {
+              final newNote = noteController.text.trim();
+              Navigator.pop(ctx);
+              await widget.storageService
+                  .updateItemNote(_currentItem.id, newNote);
+              setState(() {
+                _currentItem = _currentItem.copyWith(
+                  note: newNote,
+                  clearNote: newNote.isEmpty,
+                );
+              });
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                        newNote.isNotEmpty ? 'Note saved!' : 'Note removed'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            },
+            child: const Text('Save Note'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _chooseCollection() {
+    final collections = widget.storageService.collections;
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Assign Collection / Tag',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              if (_currentItem.collection != null) ...[
+                ListTile(
+                  leading: const Icon(Icons.label_off_rounded,
+                      color: AppColors.error),
+                  title: const Text('Remove from collection'),
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    await widget.storageService
+                        .assignCollection(_currentItem.id, null);
+                    setState(() {
+                      _currentItem =
+                          _currentItem.copyWith(clearCollection: true);
+                    });
+                  },
+                ),
+                const Divider(),
+              ],
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: collections.length,
+                  itemBuilder: (context, idx) {
+                    final col = collections[idx];
+                    final isAssigned = _currentItem.collection == col;
+                    return ListTile(
+                      leading: Icon(
+                        Icons.folder_outlined,
+                        color: isAssigned ? AppColors.primary : Colors.grey,
+                      ),
+                      title: Text(col,
+                          style: TextStyle(
+                            fontWeight:
+                                isAssigned ? FontWeight.w700 : FontWeight.w500,
+                            color: isAssigned ? AppColors.primary : null,
+                          )),
+                      trailing: isAssigned
+                          ? const Icon(Icons.check_rounded,
+                              color: AppColors.primary)
+                          : null,
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        await widget.storageService
+                            .assignCollection(_currentItem.id, col);
+                        setState(() {
+                          _currentItem = _currentItem.copyWith(collection: col);
+                        });
+                      },
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(44)),
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _showCreateCollectionDialog();
+                },
+                icon: const Icon(Icons.create_new_folder_outlined, size: 18),
+                label: const Text('Create New Collection'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showCreateCollectionDialog() {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('New Collection'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Collection Name',
+            hintText: 'e.g. Marketing, Events',
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () async {
+              final name = controller.text.trim();
+              if (name.isNotEmpty) {
+                Navigator.pop(ctx);
+                await widget.storageService.createCollection(name);
+                await widget.storageService
+                    .assignCollection(_currentItem.id, name);
+                setState(() {
+                  _currentItem = _currentItem.copyWith(collection: name);
+                });
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Added to collection "$name"'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              }
+            },
+            child: const Text('Create & Assign'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _confirmDeleteItem() {
@@ -276,7 +591,13 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert_rounded),
             onSelected: (val) {
-              if (val == 'edit') {
+              if (val == 'template') {
+                _useAsTemplate();
+              } else if (val == 'note') {
+                _editNote();
+              } else if (val == 'collection') {
+                _chooseCollection();
+              } else if (val == 'edit') {
                 _editItem();
               } else if (val == 'duplicate') {
                 _duplicateItem();
@@ -289,6 +610,37 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
               }
             },
             itemBuilder: (ctx) => [
+              const PopupMenuItem(
+                value: 'template',
+                child: Row(
+                  children: [
+                    Icon(Icons.auto_awesome_rounded, size: 18),
+                    SizedBox(width: 8),
+                    Text('Use as Template'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'note',
+                child: Row(
+                  children: [
+                    Icon(Icons.sticky_note_2_outlined, size: 18),
+                    SizedBox(width: 8),
+                    Text('Edit Note'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'collection',
+                child: Row(
+                  children: [
+                    Icon(Icons.folder_outlined, size: 18),
+                    SizedBox(width: 8),
+                    Text('Assign Collection'),
+                  ],
+                ),
+              ),
+              const PopupMenuDivider(),
               const PopupMenuItem(
                 value: 'edit',
                 child: Row(
@@ -350,7 +702,7 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Type Badge & Date Header
+              // Type Badge & Collection Header
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -379,6 +731,53 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
                           ),
                         ),
                       ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(20),
+                    onTap: _chooseCollection,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? AppColors.darkCard
+                            : Colors.grey.shade200,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: isDark
+                              ? AppColors.darkBorder
+                              : AppColors.lightBorder,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            item.collection != null
+                                ? Icons.folder_rounded
+                                : Icons.create_new_folder_outlined,
+                            size: 14,
+                            color: item.collection != null
+                                ? AppColors.primary
+                                : Colors.grey,
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            item.collection ?? 'Add Collection',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: item.collection != null
+                                  ? AppColors.primary
+                                  : (isDark
+                                      ? AppColors.darkTextSecondary
+                                      : AppColors.lightTextSecondary),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],
@@ -474,6 +873,48 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
               ),
               const SizedBox(height: 18),
 
+              // Readability Contrast Warning Banner
+              if (!item.customization.hasSufficientContrast) ...[
+                Container(
+                  margin: const EdgeInsets.only(bottom: 14),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: AppColors.warning.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.warning.withValues(alpha: 0.4)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.warning_amber_rounded, color: AppColors.warning, size: 22),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Low Readability Contrast',
+                              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: AppColors.warning),
+                            ),
+                            Text(
+                              'Contrast is ${item.customization.contrastRatio.toStringAsFixed(1)}:1 (recommended ≥ 3:1). Cameras might struggle to scan this code.',
+                              style: const TextStyle(fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _applyHighContrast,
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: const Text('Fix Contrast', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
               // Dynamic QR Presentation View (with RepaintBoundary)
               Center(
                 child: QrRenderView(
@@ -484,6 +925,7 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
                   exportMode: _exportMode,
                   cardTitle: item.title,
                   cardSubtitle: item.subtitle,
+                  note: item.note,
                   cardTypeLabel: item.type.label,
                   cardTypeIcon: item.type.icon,
                   cardTypeColor: item.type.color,
@@ -517,7 +959,82 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
                     ),
                 ],
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 14),
+
+              // Note / Description Card (Requirement 14)
+              Card(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: BorderSide(
+                    color: isDark
+                        ? AppColors.darkBorder
+                        : AppColors.lightBorder,
+                  ),
+                ),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.accent.withValues(alpha: 0.12),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.sticky_note_2_outlined,
+                            size: 18, color: AppColors.accent),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Note / Description',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.grey,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              item.note != null && item.note!.isNotEmpty
+                                  ? item.note!
+                                  : 'No note added. Tap to add a description...',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontStyle:
+                                    item.note != null && item.note!.isNotEmpty
+                                        ? FontStyle.normal
+                                        : FontStyle.italic,
+                                color: item.note != null &&
+                                        item.note!.isNotEmpty
+                                    ? null
+                                    : Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: Icon(
+                          item.note != null && item.note!.isNotEmpty
+                              ? Icons.edit_outlined
+                              : Icons.add_circle_outline_rounded,
+                          size: 18,
+                        ),
+                        tooltip: item.note != null && item.note!.isNotEmpty
+                            ? 'Edit Note'
+                            : 'Add Note',
+                        onPressed: _editNote,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
 
               // Primary Export Actions (Save & Share)
               Row(
@@ -568,22 +1085,33 @@ class _QrPreviewScreenState extends State<QrPreviewScreen> {
               ),
               const SizedBox(height: 12),
 
-              // Edit & Duplicate Action Row
+              // Edit, Template & Duplicate Action Row
               Row(
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
                       onPressed: _editItem,
-                      icon: const Icon(Icons.edit_outlined, size: 18),
-                      label: const Text('Edit / Reuse'),
+                      icon: const Icon(Icons.edit_outlined, size: 16),
+                      label: const Text('Edit',
+                          style: TextStyle(fontSize: 12)),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _useAsTemplate,
+                      icon: const Icon(Icons.auto_awesome_rounded, size: 16),
+                      label: const Text('Template',
+                          style: TextStyle(fontSize: 12)),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: OutlinedButton.icon(
                       onPressed: _duplicateItem,
-                      icon: const Icon(Icons.copy_all_rounded, size: 18),
-                      label: const Text('Duplicate'),
+                      icon: const Icon(Icons.copy_all_rounded, size: 16),
+                      label: const Text('Duplicate',
+                          style: TextStyle(fontSize: 12)),
                     ),
                   ),
                 ],

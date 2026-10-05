@@ -23,14 +23,17 @@ class _MainShellScreenState extends State<MainShellScreen> {
   int _currentIndex = 0;
   QrType _createInitialType = QrType.url;
   int _historySubTab = 0;
+  String? _historyCollection;
   Map<String, dynamic>? _createInitialValues;
   int _createScreenKeySeed = 0;
+  int _historyKeySeed = 0;
 
   void _onNavigateToTab(
     int index, [
     QrType? initialType,
     int? historySubTab,
     Map<String, dynamic>? initialValues,
+    String? initialCollection,
   ]) {
     setState(() {
       _currentIndex = index;
@@ -43,6 +46,8 @@ class _MainShellScreenState extends State<MainShellScreen> {
       if (initialValues != null) {
         _createInitialValues = initialValues;
       }
+      _historyCollection = initialCollection;
+      _historyKeySeed++;
       _createScreenKeySeed++;
     });
   }
@@ -61,10 +66,11 @@ class _MainShellScreenState extends State<MainShellScreen> {
         initialValues: _createInitialValues,
       ),
       HistoryScreen(
-        key: ValueKey('history_$_historySubTab'),
+        key: ValueKey('history_${_historySubTab}_${_historyCollection ?? ""}_$_historyKeySeed'),
         storageService: widget.storageService,
         onNavigateToTab: _onNavigateToTab,
         initialSubTab: _historySubTab,
+        initialCollection: _historyCollection,
       ),
       ScannerScreen(
         storageService: widget.storageService,

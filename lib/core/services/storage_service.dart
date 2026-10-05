@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uuid/uuid.dart';
 import 'package:qrcode_generator/core/models/qr_customization.dart';
 import 'package:qrcode_generator/core/models/qr_item.dart';
 import 'package:qrcode_generator/core/models/qr_preset.dart';
@@ -10,16 +12,20 @@ class StorageService extends ChangeNotifier {
   static const String _historyKey = 'qr_history_v1';
   static const String _scanHistoryKey = 'qr_scan_history_v1';
   static const String _presetsKey = 'qr_presets_v1';
+  static const String _collectionsKey = 'qr_collections_v1';
   static const String _themeKey = 'app_theme_mode_v1';
   static const String _onboardingKey = 'qr_onboarding_completed_v1';
   static const String _defaultQrSizeKey = 'pref_default_qr_size';
   static const String _defaultEccKey = 'pref_default_ecc';
   static const String _defaultExportModeKey = 'pref_default_export_mode';
+  static const String _confirmBeforeOpenKey = 'pref_confirm_before_open';
+  static const String _scannerTorchKey = 'pref_scanner_torch_default';
 
   final SharedPreferences _prefs;
   List<QrItem> _history = [];
   List<ScanItem> _scanHistory = [];
   List<QrPreset> _presets = [];
+  List<String> _collections = [];
   ThemeMode _themeMode = ThemeMode.system;
   bool _initialized = false;
 
@@ -36,6 +42,7 @@ class StorageService extends ChangeNotifier {
   List<QrItem> get history => List.unmodifiable(_history);
   List<ScanItem> get scanHistory => List.unmodifiable(_scanHistory);
   List<QrPreset> get presets => List.unmodifiable(_presets);
+  List<String> get collections => List.unmodifiable(_collections);
   List<QrItem> get favorites => _history.where((e) => e.isFavorite).toList();
   ThemeMode get themeMode => _themeMode;
 
@@ -67,6 +74,20 @@ class StorageService extends ChangeNotifier {
 
   Future<void> setDefaultExportMode(String val) async {
     await _prefs.setString(_defaultExportModeKey, val);
+    notifyListeners();
+  }
+
+  // Scanner preferences
+  bool get confirmBeforeOpen => _prefs.getBool(_confirmBeforeOpenKey) ?? true;
+  bool get scannerTorchDefault => _prefs.getBool(_scannerTorchKey) ?? false;
+
+  Future<void> setConfirmBeforeOpen(bool val) async {
+    await _prefs.setBool(_confirmBeforeOpenKey, val);
+    notifyListeners();
+  }
+
+  Future<void> setScannerTorchDefault(bool val) async {
+    await _prefs.setBool(_scannerTorchKey, val);
     notifyListeners();
   }
 
@@ -181,7 +202,16 @@ class StorageService extends ChangeNotifier {
       _persistPresets();
     }
 
-    // 4. Load Theme
+    // 4. Load Collections
+    final rawCollections = _prefs.getStringList(_collectionsKey);
+    if (rawCollections != null && rawCollections.isNotEmpty) {
+      _collections = List<String>.from(rawCollections);
+    } else {
+      _collections = ['Work', 'Personal', 'Business', 'Marketing'];
+      _persistCollections();
+    }
+
+    // 5. Load Theme
     final themeStr = _prefs.getString(_themeKey);
     if (themeStr == 'light') {
       _themeMode = ThemeMode.light;
@@ -326,15 +356,116 @@ class StorageService extends ChangeNotifier {
     }
   }
 
+  /// Duplicate an existing preset
+  Future<QrPreset?> duplicatePreset(String id) async {
+    final index = _presets.indexWhere((e) => e.id == id);
+    if (index >= 0) {
+      final orig = _presets[index];
+      final duplicated = orig.copyWith(
+        id: const Uuid().v4(),
+        name: '${orig.name} (Copy)',
+        createdAt: DateTime.now(),
+      );
+      _presets.insert(index + 1, duplicated);
+      await _persistPresets();
+      notifyListeners();
+      return duplicated;
+    }
+    return null;
+  }
+
+  // ================= COLLECTIONS METHODS =================
+
+  /// Create a new custom collection
+  Future<bool> createCollection(String name) async {
+    final clean = name.trim();
+    if (clean.isEmpty || _collections.contains(clean)) return false;
+    _collections.add(clean);
+    await _persistCollections();
+    notifyListeners();
+    return true;
+  }
+
+  /// Rename an existing collection and update items belonging to it
+  Future<void> renameCollection(String oldName, String newName) async {
+    final cleanOld = oldName.trim();
+    final cleanNew = newName.trim();
+    if (cleanNew.isEmpty || cleanOld == cleanNew) return;
+
+    final index = _collections.indexOf(cleanOld);
+    if (index >= 0) {
+      _collections[index] = cleanNew;
+      // Update any QR items tagged with oldName
+      for (int i = 0; i < _history.length; i++) {
+        if (_history[i].collection == cleanOld) {
+          _history[i] = _history[i].copyWith(collection: cleanNew);
+        }
+      }
+      await _persistCollections();
+      await _persistHistory();
+      notifyListeners();
+    }
+  }
+
+  /// Delete a collection; by default keeps the QR items and just unassigns the tag
+  Future<void> deleteCollection(String name, {bool deleteItems = false}) async {
+    final clean = name.trim();
+    _collections.remove(clean);
+
+    if (deleteItems) {
+      _history.removeWhere((item) => item.collection == clean);
+    } else {
+      for (int i = 0; i < _history.length; i++) {
+        if (_history[i].collection == clean) {
+          _history[i] = _history[i].copyWith(clearCollection: true);
+        }
+      }
+    }
+
+    await _persistCollections();
+    await _persistHistory();
+    notifyListeners();
+  }
+
+  /// Assign or remove collection on a QR item
+  Future<void> assignCollection(String itemId, String? collectionName) async {
+    final index = _history.indexWhere((e) => e.id == itemId);
+    if (index >= 0) {
+      final current = _history[index];
+      _history[index] = current.copyWith(
+        collection: collectionName,
+        clearCollection: collectionName == null,
+      );
+      await _persistHistory();
+      notifyListeners();
+    }
+  }
+
+  /// Update or remove short note on a QR item
+  Future<void> updateItemNote(String itemId, String? note) async {
+    final index = _history.indexWhere((e) => e.id == itemId);
+    if (index >= 0) {
+      final current = _history[index];
+      _history[index] = current.copyWith(
+        note: note,
+        clearNote: note == null || note.trim().isEmpty,
+      );
+      await _persistHistory();
+      notifyListeners();
+    }
+  }
+
   // ================= SCAN HISTORY METHODS =================
 
-  /// Save or update a scanned QR item
+  /// Save or update a scanned QR item with duplicate suppression for rapid repeat callbacks
   Future<void> saveScanItem(ScanItem item) async {
-    final index =
-        _scanHistory.indexWhere((e) => e.rawContent == item.rawContent);
-    if (index >= 0) {
-      _scanHistory.removeAt(index);
+    // Suppress accidental duplicate callbacks within 3 seconds of the most recent scan
+    if (_scanHistory.isNotEmpty &&
+        _scanHistory.first.rawContent == item.rawContent &&
+        DateTime.now().difference(_scanHistory.first.scannedAt).inSeconds < 3) {
+      return;
     }
+
     _scanHistory.insert(0, item);
 
     if (_scanHistory.length > 500) {
@@ -379,6 +510,173 @@ class StorageService extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ================= BACKUP & RESTORE =================
+
+  /// Generate complete JSON backup export containing history, favorites, scans, presets, collections, and settings
+  String exportBackupJson() {
+    final Map<String, dynamic> data = {
+      'schemaVersion': 2,
+      'appName': 'QR Studio Pro',
+      'exportedAt': DateTime.now().toIso8601String(),
+      'history': _history.map((e) => e.toMap()).toList(),
+      'scanHistory': _scanHistory.map((e) => e.toMap()).toList(),
+      'presets': _presets.map((e) => e.toMap()).toList(),
+      'collections': _collections,
+      'settings': {
+        'themeMode': _themeMode.name,
+        'defaultQrSize': defaultQrSize,
+        'defaultEcc': defaultErrorCorrection,
+        'defaultExportMode': defaultExportMode,
+        'confirmBeforeOpen': confirmBeforeOpen,
+        'scannerTorchDefault': scannerTorchDefault,
+      },
+    };
+    return const JsonEncoder.withIndent('  ').convert(data);
+  }
+
+  /// Validate and import JSON backup data with option to Merge or Replace
+  Future<BackupRestoreResult> importBackupJson(String jsonString, {bool replace = false}) async {
+    try {
+      final dynamic decoded = jsonDecode(jsonString);
+      if (decoded is! Map) {
+        return const BackupRestoreResult(
+          success: false,
+          errorMessage: 'Invalid JSON format. Expected root object.',
+        );
+      }
+
+      // 1. History
+      final List<QrItem> importedHistory = [];
+      if (decoded['history'] is List) {
+        for (final raw in decoded['history']) {
+          if (raw is Map) {
+            try {
+              importedHistory.add(QrItem.fromMap(Map<String, dynamic>.from(raw)));
+            } catch (_) {}
+          }
+        }
+      }
+
+      // 2. Scan History
+      final List<ScanItem> importedScans = [];
+      if (decoded['scanHistory'] is List) {
+        for (final raw in decoded['scanHistory']) {
+          if (raw is Map) {
+            try {
+              importedScans.add(ScanItem.fromMap(Map<String, dynamic>.from(raw)));
+            } catch (_) {}
+          }
+        }
+      }
+
+      // 3. Presets
+      final List<QrPreset> importedPresets = [];
+      if (decoded['presets'] is List) {
+        for (final raw in decoded['presets']) {
+          if (raw is Map) {
+            try {
+              importedPresets.add(QrPreset.fromMap(Map<String, dynamic>.from(raw)));
+            } catch (_) {}
+          }
+        }
+      }
+
+      // 4. Collections
+      final List<String> importedCollections = [];
+      if (decoded['collections'] is List) {
+        for (final c in decoded['collections']) {
+          if (c is String && c.trim().isNotEmpty) {
+            importedCollections.add(c.trim());
+          }
+        }
+      }
+
+      if (replace) {
+        _history = importedHistory;
+        _scanHistory = importedScans;
+        if (importedPresets.isNotEmpty) _presets = importedPresets;
+        if (importedCollections.isNotEmpty) _collections = importedCollections;
+      } else {
+        // Merge mode: Add items if ID not already present
+        final existingIds = _history.map((e) => e.id).toSet();
+        for (final item in importedHistory) {
+          if (!existingIds.contains(item.id)) {
+            _history.add(item);
+            existingIds.add(item.id);
+          }
+        }
+
+        final existingScanIds = _scanHistory.map((e) => e.id).toSet();
+        for (final s in importedScans) {
+          if (!existingScanIds.contains(s.id)) {
+            _scanHistory.add(s);
+            existingScanIds.add(s.id);
+          }
+        }
+
+        final existingPresetIds = _presets.map((e) => e.id).toSet();
+        for (final p in importedPresets) {
+          if (!existingPresetIds.contains(p.id)) {
+            _presets.add(p);
+            existingPresetIds.add(p.id);
+          }
+        }
+
+        final colSet = _collections.toSet();
+        for (final c in importedCollections) {
+          if (!colSet.contains(c)) {
+            _collections.add(c);
+            colSet.add(c);
+          }
+        }
+      }
+
+      // 5. Restore settings if present
+      if (decoded['settings'] is Map) {
+        final s = decoded['settings'] as Map;
+        if (s['defaultQrSize'] is num) {
+          await setDefaultQrSize((s['defaultQrSize'] as num).toDouble());
+        }
+        if (s['defaultEcc'] is String) {
+          await setDefaultErrorCorrection(s['defaultEcc'] as String);
+        }
+        if (s['defaultExportMode'] is String) {
+          await setDefaultExportMode(s['defaultExportMode'] as String);
+        }
+        if (s['confirmBeforeOpen'] is bool) {
+          await setConfirmBeforeOpen(s['confirmBeforeOpen'] as bool);
+        }
+        if (s['scannerTorchDefault'] is bool) {
+          await setScannerTorchDefault(s['scannerTorchDefault'] as bool);
+        }
+        if (s['themeMode'] is String) {
+          final tm = s['themeMode'] as String;
+          if (tm == 'light') await setThemeMode(ThemeMode.light);
+          if (tm == 'dark') await setThemeMode(ThemeMode.dark);
+          if (tm == 'system') await setThemeMode(ThemeMode.system);
+        }
+      }
+
+      await _persistHistory();
+      await _persistScanHistory();
+      await _persistPresets();
+      await _persistCollections();
+      notifyListeners();
+      return BackupRestoreResult(
+        success: true,
+        importedHistory: importedHistory.length,
+        importedScans: importedScans.length,
+        importedPresets: importedPresets.length,
+        importedCollections: importedCollections.length,
+      );
+    } catch (e) {
+      return BackupRestoreResult(
+        success: false,
+        errorMessage: e.toString(),
+      );
+    }
+  }
+
   // ================= PERSISTENCE HELPERS =================
 
   Future<void> _persistHistory() async {
@@ -395,4 +693,26 @@ class StorageService extends ChangeNotifier {
     final strList = _presets.map((e) => e.toJson()).toList();
     await _prefs.setStringList(_presetsKey, strList);
   }
+
+  Future<void> _persistCollections() async {
+    await _prefs.setStringList(_collectionsKey, _collections);
+  }
+}
+
+class BackupRestoreResult {
+  final bool success;
+  final int importedHistory;
+  final int importedScans;
+  final int importedPresets;
+  final int importedCollections;
+  final String? errorMessage;
+
+  const BackupRestoreResult({
+    required this.success,
+    this.importedHistory = 0,
+    this.importedScans = 0,
+    this.importedPresets = 0,
+    this.importedCollections = 0,
+    this.errorMessage,
+  });
 }

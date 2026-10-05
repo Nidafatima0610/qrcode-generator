@@ -16,7 +16,7 @@ enum QrExportMode {
       case QrExportMode.titleQr:
         return 'QR + Title';
       case QrExportMode.full:
-        return 'QR + Info';
+        return 'QR + Title + Note';
       case QrExportMode.card:
         return 'Presentation Card';
     }
@@ -41,6 +41,8 @@ enum QrExportMode {
       case 'titleqr':
         return QrExportMode.titleQr;
       case 'full':
+      case 'titlenote':
+      case 'title_note':
         return QrExportMode.full;
       case 'card':
       case 'presentation':
@@ -64,6 +66,7 @@ class QrRenderView extends StatelessWidget {
   final bool presentationCard; // Kept for backwards compatibility
   final String? cardTitle;
   final String? cardSubtitle;
+  final String? note;
   final String? cardTypeLabel;
   final IconData? cardTypeIcon;
   final Color? cardTypeColor;
@@ -79,6 +82,7 @@ class QrRenderView extends StatelessWidget {
     this.presentationCard = false,
     this.cardTitle,
     this.cardSubtitle,
+    this.note,
     this.cardTypeLabel,
     this.cardTypeIcon,
     this.cardTypeColor,
@@ -239,6 +243,30 @@ class QrRenderView extends StatelessWidget {
               ),
             ],
 
+            // Card Note if present
+            if (note != null && note!.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                decoration: BoxDecoration(
+                  color: fg.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  'Note: $note',
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontStyle: FontStyle.italic,
+                    fontWeight: FontWeight.w500,
+                    color: fg.withValues(alpha: 0.85),
+                  ),
+                ),
+              ),
+            ],
+
             const SizedBox(height: 10),
             // Footer Brand pill
             Row(
@@ -356,7 +384,29 @@ class QrRenderView extends StatelessWidget {
                 ),
               ),
             ],
-            if (cardSubtitle != null && cardSubtitle!.isNotEmpty) ...[
+            if (note != null && note!.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: fg.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  note!,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontStyle: FontStyle.italic,
+                    fontWeight: FontWeight.w500,
+                    color: fg.withValues(alpha: 0.85),
+                  ),
+                ),
+              ),
+            ] else if (cardSubtitle != null && cardSubtitle!.isNotEmpty) ...[
               const SizedBox(height: 4),
               Text(
                 cardSubtitle!,

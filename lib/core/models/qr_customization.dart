@@ -176,5 +176,18 @@ class QrDesignPreset {
         errorCorrectionLevel: 'M',
       ),
     ),
+    QrDesignPreset(
+      id: 'high_contrast',
+      name: 'High Contrast',
+      description: 'Ultra-legible pure pitch black on pure white with Level H ECC',
+      icon: Icons.contrast_rounded,
+      customization: QrCustomization(
+        foregroundColor: Color(0xFF000000),
+        backgroundColor: Color(0xFFFFFFFF),
+        eyeShape: 'square',
+        dataModuleShape: 'square',
+        errorCorrectionLevel: 'H',
+      ),
+    ),
   ];
 }

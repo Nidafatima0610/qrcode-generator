@@ -109,6 +109,24 @@ class _BulkCreateScreenState extends State<BulkCreateScreen> {
     }
   }
 
+  void _duplicateRow(int index) {
+    if (_rows.length >= maxBulkRows) {
+      _showMaxLimitDialog();
+      return;
+    }
+    final source = _rows[index];
+    final row = BulkEntryRow(
+      id: const Uuid().v4(),
+      initialTitle: source.titleController.text,
+      initialContent: source.contentController.text,
+    );
+    row.contentController.addListener(() => setState(() {}));
+    row.titleController.addListener(() => setState(() {}));
+    setState(() {
+      _rows.insert(index + 1, row);
+    });
+  }
+
   void _clearInvalidEntries() {
     final toRemove = <BulkEntryRow>[];
     for (final row in _rows) {
@@ -475,14 +493,29 @@ class _BulkCreateScreenState extends State<BulkCreateScreen> {
                                     ],
                                   ),
                                 ),
-                                const SizedBox(width: 8),
+                                const SizedBox(width: 4),
 
-                                // Delete Row Button
-                                IconButton(
-                                  icon: const Icon(Icons.delete_outline_rounded,
-                                      size: 20, color: Colors.grey),
-                                  tooltip: 'Remove Row',
-                                  onPressed: () => _removeRow(index),
+                                // Row Action Buttons (Duplicate & Delete)
+                                Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      visualDensity: VisualDensity.compact,
+                                      icon: const Icon(Icons.copy_rounded,
+                                          size: 18, color: Colors.grey),
+                                      tooltip: 'Duplicate Row',
+                                      onPressed: () => _duplicateRow(index),
+                                    ),
+                                    IconButton(
+                                      visualDensity: VisualDensity.compact,
+                                      icon: const Icon(
+                                          Icons.delete_outline_rounded,
+                                          size: 19,
+                                          color: Colors.grey),
+                                      tooltip: 'Remove Row',
+                                      onPressed: () => _removeRow(index),
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),

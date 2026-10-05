@@ -21,6 +21,7 @@ class HomeScreen extends StatelessWidget {
     QrType? initialType,
     int? historySubTab,
     Map<String, dynamic>? initialValues,
+    String? initialCollection,
   ]) onNavigateToTab;
 
   const HomeScreen({
@@ -28,6 +29,41 @@ class HomeScreen extends StatelessWidget {
     required this.storageService,
     required this.onNavigateToTab,
   });
+
+  Future<void> _confirmDeleteItem(BuildContext context, QrItem item) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete QR Code?'),
+        content: Text('Are you sure you want to delete "${item.title}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await storageService.deleteItem(item.id);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Deleted "${item.title}"'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
 
   Future<void> _duplicateItem(BuildContext context, QrItem item) async {
     final duplicated = item.copyWith(
@@ -95,57 +131,77 @@ class HomeScreen extends StatelessWidget {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  colors: [
-                                    AppColors.primary,
-                                    AppColors.secondary,
+                        Expanded(
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    colors: [
+                                      AppColors.primary,
+                                      AppColors.secondary,
+                                    ],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                  ),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Icon(
+                                  Icons.qr_code_2_rounded,
+                                  color: Colors.white,
+                                  size: 24,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'QR Studio Pro',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: -0.5,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Generate, Style & Scan',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        color: isDark
+                                            ? AppColors.darkTextSecondary
+                                            : AppColors.lightTextSecondary,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
                                   ],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
                                 ),
-                                borderRadius: BorderRadius.circular(12),
                               ),
-                              child: const Icon(
-                                Icons.qr_code_2_rounded,
-                                color: Colors.white,
-                                size: 26,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'QR Studio Pro',
-                                  style: TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: -0.5,
-                                  ),
-                                ),
-                                Text(
-                                  'Generate, Customize & Scan',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: isDark
-                                        ? AppColors.darkTextSecondary
-                                        : AppColors.lightTextSecondary,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                        // Quick action buttons in top right (Scanner + Settings)
+                        const SizedBox(width: 8),
+                        // Quick action buttons in top right (Search + Scanner + Settings)
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
+                            IconButton(
+                              style: IconButton.styleFrom(
+                                backgroundColor: isDark
+                                    ? AppColors.darkCard
+                                    : AppColors.lightBorder.withValues(alpha: 0.5),
+                              ),
+                              icon: const Icon(Icons.search_rounded, size: 20),
+                              tooltip: 'Search QR Codes',
+                              onPressed: () => onNavigateToTab(2, null, 0),
+                            ),
+                            const SizedBox(width: 6),
                             IconButton(
                               style: IconButton.styleFrom(
                                 backgroundColor: isDark
@@ -538,7 +594,8 @@ class HomeScreen extends StatelessWidget {
                             padding: const EdgeInsets.only(bottom: 10),
                             child: QrCard(
                               item: item,
-                              showDelete: false,
+                              showDelete: true,
+                              onDelete: () => _confirmDeleteItem(context, item),
                               onFavoriteToggle: () async {
                                 await storageService.toggleFavorite(item.id);
                               },
@@ -564,6 +621,124 @@ class HomeScreen extends StatelessWidget {
                       ),
                     ),
                   ),
+
+                // ==========================================
+                // 2.5 COLLECTIONS & TAGS QUICK SECTION (Requirement 12 & 18)
+                // ==========================================
+                if (storageService.collections.isNotEmpty) ...[
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.folder_outlined,
+                                  size: 16, color: AppColors.primary),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Collections & Tags',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleSmall
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: -0.2,
+                                    ),
+                              ),
+                            ],
+                          ),
+                          TextButton(
+                            style: TextButton.styleFrom(
+                              padding: EdgeInsets.zero,
+                              minimumSize: const Size(60, 30),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            onPressed: () => onNavigateToTab(2, null, 0),
+                            child: const Text(
+                              'View in History',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: 40,
+                      child: ListView.separated(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        scrollDirection: Axis.horizontal,
+                        itemCount: storageService.collections.length,
+                        separatorBuilder: (_, _) => const SizedBox(width: 8),
+                        itemBuilder: (context, idx) {
+                          final col = storageService.collections[idx];
+                          final count = storageService.history
+                              .where((e) => e.collection == col)
+                              .length;
+
+                          return InkWell(
+                            borderRadius: BorderRadius.circular(20),
+                            onTap: () => onNavigateToTab(2, null, 0, null, col),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? AppColors.darkCard
+                                    : Colors.white,
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: isDark
+                                      ? AppColors.darkBorder
+                                      : AppColors.lightBorder,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.folder_rounded,
+                                      size: 14, color: AppColors.secondary),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    col,
+                                    style: const TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primary
+                                          .withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Text(
+                                      '$count',
+                                      style: const TextStyle(
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.primary,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ],
 
                 // ==========================================
                 // 3. FAVORITES SECTION (when storageService.favorites.isNotEmpty)
@@ -622,7 +797,8 @@ class HomeScreen extends StatelessWidget {
                             padding: const EdgeInsets.only(bottom: 10),
                             child: QrCard(
                               item: item,
-                              showDelete: false,
+                              showDelete: true,
+                              onDelete: () => _confirmDeleteItem(context, item),
                               onFavoriteToggle: () async {
                                 await storageService.toggleFavorite(item.id);
                               },

@@ -110,14 +110,27 @@ class _PresetsScreenState extends State<PresetsScreen> {
     );
   }
 
-  void _showCreatePresetDialog() {
-    final nameController = TextEditingController();
-    final titleController = TextEditingController();
-    QrType selectedType = QrType.url;
+  void _showPresetEditorDialog({QrPreset? editingPreset}) {
+    final nameController =
+        TextEditingController(text: editingPreset?.name ?? '');
+    final titleController =
+        TextEditingController(text: editingPreset?.defaultTitle ?? '');
+    QrType selectedType = editingPreset?.type ?? QrType.url;
     int selectedColorIndex = 0;
-    String selectedEc = 'M';
-    String eyeShape = 'square';
-    String moduleShape = 'square';
+    if (editingPreset != null) {
+      for (int i = 0; i < AppColors.presets.length; i++) {
+        if (AppColors.presets[i].foreground.toARGB32() ==
+                editingPreset.customization.foregroundColor.toARGB32() &&
+            AppColors.presets[i].background.toARGB32() ==
+                editingPreset.customization.backgroundColor.toARGB32()) {
+          selectedColorIndex = i;
+          break;
+        }
+      }
+    }
+    String selectedEc = editingPreset?.customization.errorCorrectionLevel ?? 'M';
+    String eyeShape = editingPreset?.customization.eyeShape ?? 'square';
+    String moduleShape = editingPreset?.customization.dataModuleShape ?? 'square';
 
     showModalBottomSheet(
       context: context,
@@ -128,6 +141,13 @@ class _PresetsScreenState extends State<PresetsScreen> {
       builder: (modalCtx) => StatefulBuilder(
         builder: (ctx, setModalState) {
           final colorPreset = AppColors.presets[selectedColorIndex];
+          final testCustomization = QrCustomization(
+            foregroundColor: colorPreset.foreground,
+            backgroundColor: colorPreset.background,
+            dataModuleShape: moduleShape,
+            eyeShape: eyeShape,
+            errorCorrectionLevel: selectedEc,
+          );
 
           return Padding(
             padding: EdgeInsets.only(
@@ -144,9 +164,11 @@ class _PresetsScreenState extends State<PresetsScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
-                        'Create QR Preset',
-                        style: TextStyle(
+                      Text(
+                        editingPreset != null
+                            ? 'Edit QR Preset'
+                            : 'Create QR Preset',
+                        style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w800,
                         ),
@@ -191,13 +213,16 @@ class _PresetsScreenState extends State<PresetsScreen> {
                     children: QrType.values.map((t) {
                       final isSelected = t == selectedType;
                       return ChoiceChip(
-                        avatar: Icon(t.icon, size: 16, color: isSelected ? Colors.white : t.color),
+                        avatar: Icon(t.icon,
+                            size: 16,
+                            color: isSelected ? Colors.white : t.color),
                         label: Text(t.shortName),
                         selected: isSelected,
                         selectedColor: AppColors.primary,
                         labelStyle: TextStyle(
                           color: isSelected ? Colors.white : null,
-                          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                          fontWeight:
+                              isSelected ? FontWeight.w700 : FontWeight.w500,
                           fontSize: 12,
                         ),
                         onSelected: (val) {
@@ -209,9 +234,25 @@ class _PresetsScreenState extends State<PresetsScreen> {
                   const SizedBox(height: 16),
 
                   // Color preset selector
-                  const Text(
-                    'Color Theme',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Color Theme',
+                        style:
+                            TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                      ),
+                      Text(
+                        'Contrast: ${testCustomization.contrastRatio.toStringAsFixed(1)}:1',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: testCustomization.hasSufficientContrast
+                              ? AppColors.success
+                              : AppColors.error,
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 8),
                   SizedBox(
@@ -224,7 +265,8 @@ class _PresetsScreenState extends State<PresetsScreen> {
                         final p = AppColors.presets[idx];
                         final isSel = idx == selectedColorIndex;
                         return InkWell(
-                          onTap: () => setModalState(() => selectedColorIndex = idx),
+                          onTap: () =>
+                              setModalState(() => selectedColorIndex = idx),
                           borderRadius: BorderRadius.circular(10),
                           child: Container(
                             width: 60,
@@ -233,7 +275,9 @@ class _PresetsScreenState extends State<PresetsScreen> {
                               color: p.background,
                               borderRadius: BorderRadius.circular(10),
                               border: Border.all(
-                                color: isSel ? AppColors.primary : Colors.grey.shade300,
+                                color: isSel
+                                    ? AppColors.primary
+                                    : Colors.grey.shade300,
                                 width: isSel ? 2.5 : 1,
                               ),
                             ),
@@ -264,16 +308,24 @@ class _PresetsScreenState extends State<PresetsScreen> {
                           children: [
                             const Text(
                               'Module Style',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                              style: TextStyle(
+                                  fontSize: 12, fontWeight: FontWeight.w700),
                             ),
                             const SizedBox(height: 4),
                             SegmentedButton<String>(
                               segments: const [
-                                ButtonSegment(value: 'square', label: Text('Square', style: TextStyle(fontSize: 11))),
-                                ButtonSegment(value: 'circle', label: Text('Dot', style: TextStyle(fontSize: 11))),
+                                ButtonSegment(
+                                    value: 'square',
+                                    label: Text('Square',
+                                        style: TextStyle(fontSize: 11))),
+                                ButtonSegment(
+                                    value: 'circle',
+                                    label: Text('Dot',
+                                        style: TextStyle(fontSize: 11))),
                               ],
                               selected: {moduleShape},
-                              onSelectionChanged: (val) => setModalState(() => moduleShape = val.first),
+                              onSelectionChanged: (val) => setModalState(
+                                  () => moduleShape = val.first),
                             ),
                           ],
                         ),
@@ -287,18 +339,32 @@ class _PresetsScreenState extends State<PresetsScreen> {
                           children: [
                             const Text(
                               'Error Correction',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                              style: TextStyle(
+                                  fontSize: 12, fontWeight: FontWeight.w700),
                             ),
                             const SizedBox(height: 4),
                             SegmentedButton<String>(
                               segments: const [
-                                ButtonSegment(value: 'L', label: Text('L', style: TextStyle(fontSize: 11))),
-                                ButtonSegment(value: 'M', label: Text('M', style: TextStyle(fontSize: 11))),
-                                ButtonSegment(value: 'Q', label: Text('Q', style: TextStyle(fontSize: 11))),
-                                ButtonSegment(value: 'H', label: Text('H', style: TextStyle(fontSize: 11))),
+                                ButtonSegment(
+                                    value: 'L',
+                                    label: Text('L',
+                                        style: TextStyle(fontSize: 11))),
+                                ButtonSegment(
+                                    value: 'M',
+                                    label: Text('M',
+                                        style: TextStyle(fontSize: 11))),
+                                ButtonSegment(
+                                    value: 'Q',
+                                    label: Text('Q',
+                                        style: TextStyle(fontSize: 11))),
+                                ButtonSegment(
+                                    value: 'H',
+                                    label: Text('H',
+                                        style: TextStyle(fontSize: 11))),
                               ],
                               selected: {selectedEc},
-                              onSelectionChanged: (val) => setModalState(() => selectedEc = val.first),
+                              onSelectionChanged: (val) =>
+                                  setModalState(() => selectedEc = val.first),
                             ),
                           ],
                         ),
@@ -323,19 +389,31 @@ class _PresetsScreenState extends State<PresetsScreen> {
                           return;
                         }
 
+                        // Readability contrast check (Requirement 3 & 4)
+                        if (!testCustomization.hasSufficientContrast) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                  'Insufficient contrast (${testCustomization.contrastRatio.toStringAsFixed(1)}:1). Please pick colors with higher contrast to ensure scan readability.'),
+                              behavior: SnackBarBehavior.floating,
+                              backgroundColor: AppColors.error,
+                            ),
+                          );
+                          return;
+                        }
+
+                        final targetId =
+                            editingPreset?.id ?? const Uuid().v4();
+                        final targetCreatedAt =
+                            editingPreset?.createdAt ?? DateTime.now();
+
                         final newPreset = QrPreset(
-                          id: const Uuid().v4(),
+                          id: targetId,
                           name: name,
                           type: selectedType,
                           defaultTitle: titleController.text.trim(),
-                          customization: QrCustomization(
-                            foregroundColor: colorPreset.foreground,
-                            backgroundColor: colorPreset.background,
-                            dataModuleShape: moduleShape,
-                            eyeShape: eyeShape,
-                            errorCorrectionLevel: selectedEc,
-                          ),
-                          createdAt: DateTime.now(),
+                          customization: testCustomization,
+                          createdAt: targetCreatedAt,
                         );
 
                         await widget.storageService.savePreset(newPreset);
@@ -343,14 +421,18 @@ class _PresetsScreenState extends State<PresetsScreen> {
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: Text('Created preset "$name"'),
+                              content: Text(editingPreset != null
+                                  ? 'Updated preset "$name"'
+                                  : 'Created preset "$name"'),
                               behavior: SnackBarBehavior.floating,
                             ),
                           );
                         }
                       },
                       icon: const Icon(Icons.bookmark_add_rounded),
-                      label: const Text('Save Preset'),
+                      label: Text(editingPreset != null
+                          ? 'Update Preset'
+                          : 'Save Preset'),
                     ),
                   ),
                 ],
@@ -373,7 +455,7 @@ class _PresetsScreenState extends State<PresetsScreen> {
           IconButton(
             icon: const Icon(Icons.add_rounded),
             tooltip: 'Create Preset',
-            onPressed: () => _showCreatePresetDialog(),
+            onPressed: () => _showPresetEditorDialog(),
           ),
         ],
       ),
@@ -464,7 +546,7 @@ class _PresetsScreenState extends State<PresetsScreen> {
                               ? 'Save your commonly used QR configurations as presets to quickly build styled codes.'
                               : 'No presets match your current search/filter.',
                           buttonText: 'Create New Preset',
-                          onButtonPressed: () => _showCreatePresetDialog(),
+                          onButtonPressed: () => _showPresetEditorDialog(),
                         )
                       : ListView.separated(
                           padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
@@ -599,18 +681,58 @@ class _PresetsScreenState extends State<PresetsScreen> {
                                       child: const Text('Use'),
                                     ),
 
-                                    // Popup Menu for Rename / Delete
+                                    // Popup Menu for Edit / Duplicate / Rename / Delete
                                     PopupMenuButton<String>(
                                       icon: const Icon(Icons.more_vert_rounded,
                                           size: 18),
-                                      onSelected: (val) {
-                                        if (val == 'rename') {
+                                      onSelected: (val) async {
+                                        if (val == 'edit') {
+                                          _showPresetEditorDialog(
+                                              editingPreset: preset);
+                                        } else if (val == 'duplicate') {
+                                          final messenger =
+                                              ScaffoldMessenger.of(context);
+                                          final dup = await widget
+                                              .storageService
+                                              .duplicatePreset(preset.id);
+                                          if (mounted && dup != null) {
+                                            messenger.showSnackBar(
+                                              SnackBar(
+                                                content: Text(
+                                                    'Duplicated as "${dup.name}"'),
+                                                behavior:
+                                                    SnackBarBehavior.floating,
+                                              ),
+                                            );
+                                          }
+                                        } else if (val == 'rename') {
                                           _showRenameDialog(preset);
                                         } else if (val == 'delete') {
                                           _confirmDeletePreset(preset);
                                         }
                                       },
                                       itemBuilder: (ctx) => const [
+                                        PopupMenuItem(
+                                          value: 'edit',
+                                          child: Row(
+                                            children: [
+                                              Icon(Icons.tune_rounded, size: 16),
+                                              SizedBox(width: 8),
+                                              Text('Edit Style'),
+                                            ],
+                                          ),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'duplicate',
+                                          child: Row(
+                                            children: [
+                                              Icon(Icons.copy_all_rounded,
+                                                  size: 16),
+                                              SizedBox(width: 8),
+                                              Text('Duplicate'),
+                                            ],
+                                          ),
+                                        ),
                                         PopupMenuItem(
                                           value: 'rename',
                                           child: Row(

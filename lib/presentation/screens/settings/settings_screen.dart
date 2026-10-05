@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:qrcode_generator/core/constants/app_colors.dart';
 import 'package:qrcode_generator/core/services/storage_service.dart';
+import 'package:qrcode_generator/core/services/qr_sharing_service.dart';
 import 'package:qrcode_generator/presentation/screens/presets/presets_screen.dart';
 import 'package:qrcode_generator/presentation/screens/onboarding/onboarding_screen.dart';
 
@@ -11,6 +12,293 @@ class SettingsScreen extends StatelessWidget {
     super.key,
     required this.storageService,
   });
+
+  void _exportBackup(BuildContext context) {
+    final jsonString = storageService.exportBackupJson();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.cloud_upload_outlined, color: AppColors.primary),
+            SizedBox(width: 8),
+            Text('Export Data Backup'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Your backup includes all generated codes, notes, collections, custom presets, and scan records (Schema v2).',
+              style: TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              height: 120,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: isDark ? Colors.black38 : Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                ),
+              ),
+              child: SingleChildScrollView(
+                child: SelectableText(
+                  jsonString,
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.copy_rounded, size: 16),
+            label: const Text('Copy JSON'),
+            onPressed: () {
+              Navigator.pop(ctx);
+              QrSharingService.copyToClipboard(
+                context,
+                jsonString,
+                message: 'Backup JSON copied to clipboard!',
+              );
+            },
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            icon: const Icon(Icons.share_rounded, size: 16),
+            label: const Text('Share Backup'),
+            onPressed: () {
+              Navigator.pop(ctx);
+              QrSharingService.shareText(
+                text: jsonString,
+                subject: 'QR Studio Pro Backup',
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _restoreBackup(BuildContext context) {
+    final textController = TextEditingController();
+    bool replaceMode = false;
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.cloud_download_outlined, color: AppColors.primary),
+              SizedBox(width: 8),
+              Text('Restore from Backup'),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Paste your JSON backup data below to restore your QR codes, scans, collections, and presets.',
+                  style: TextStyle(fontSize: 13),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: textController,
+                  maxLines: 5,
+                  decoration: const InputDecoration(
+                    hintText: 'Paste backup JSON here...',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                const Text(
+                  'Restore Mode:',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(10),
+                        onTap: () => setDialogState(() => replaceMode = false),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                          decoration: BoxDecoration(
+                            color: !replaceMode
+                                ? AppColors.primary.withValues(alpha: 0.12)
+                                : (Theme.of(ctx).brightness == Brightness.dark ? Colors.white10 : Colors.grey.shade100),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: !replaceMode ? AppColors.primary : Colors.grey.shade300,
+                              width: !replaceMode ? 1.8 : 1,
+                            ),
+                          ),
+                          child: Column(
+                            children: [
+                              Icon(Icons.merge_type_rounded,
+                                  color: !replaceMode ? AppColors.primary : Colors.grey, size: 20),
+                              const SizedBox(height: 4),
+                              Text('Merge',
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: !replaceMode ? FontWeight.w700 : FontWeight.w500,
+                                    color: !replaceMode ? AppColors.primary : null,
+                                  )),
+                              const SizedBox(height: 2),
+                              const Text('Keep existing',
+                                  style: TextStyle(fontSize: 10, color: Colors.grey)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(10),
+                        onTap: () => setDialogState(() => replaceMode = true),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                          decoration: BoxDecoration(
+                            color: replaceMode
+                                ? AppColors.error.withValues(alpha: 0.12)
+                                : (Theme.of(ctx).brightness == Brightness.dark ? Colors.white10 : Colors.grey.shade100),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: replaceMode ? AppColors.error : Colors.grey.shade300,
+                              width: replaceMode ? 1.8 : 1,
+                            ),
+                          ),
+                          child: Column(
+                            children: [
+                              Icon(Icons.swap_horiz_rounded,
+                                  color: replaceMode ? AppColors.error : Colors.grey, size: 20),
+                              const SizedBox(height: 4),
+                              Text('Replace',
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: replaceMode ? FontWeight.w700 : FontWeight.w500,
+                                    color: replaceMode ? AppColors.error : null,
+                                  )),
+                              const SizedBox(height: 2),
+                              const Text('Overwrite all',
+                                  style: TextStyle(fontSize: 10, color: Colors.grey)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: replaceMode ? AppColors.error : AppColors.primary,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () async {
+                final input = textController.text.trim();
+                if (input.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Please paste backup JSON content first.'),
+                      backgroundColor: AppColors.error,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                  return;
+                }
+
+                Navigator.pop(dialogCtx);
+                final result = await storageService.importBackupJson(
+                  input,
+                  replace: replaceMode,
+                );
+
+                if (context.mounted) {
+                  if (result.success) {
+                    showDialog(
+                      context: context,
+                      builder: (resCtx) => AlertDialog(
+                        title: const Row(
+                          children: [
+                            Icon(Icons.check_circle_rounded, color: AppColors.success),
+                            SizedBox(width: 8),
+                            Text('Restore Successful'),
+                          ],
+                        ),
+                        content: Text(
+                          'Backup restored successfully!\n\n'
+                          '• ${result.importedHistory} QR codes\n'
+                          '• ${result.importedScans} scan records\n'
+                          '• ${result.importedPresets} presets\n'
+                          '• ${result.importedCollections} collections',
+                          style: const TextStyle(fontSize: 13.5, height: 1.4),
+                        ),
+                        actions: [
+                          ElevatedButton(
+                            onPressed: () => Navigator.pop(resCtx),
+                            child: const Text('Done'),
+                          ),
+                        ],
+                      ),
+                    );
+                  } else {
+                    showDialog(
+                      context: context,
+                      builder: (errCtx) => AlertDialog(
+                        title: const Row(
+                          children: [
+                            Icon(Icons.error_outline_rounded, color: AppColors.error),
+                            SizedBox(width: 8),
+                            Text('Restore Failed'),
+                          ],
+                        ),
+                        content: Text(
+                          'The provided backup content is invalid or corrupted:\n\n${result.errorMessage}',
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                        actions: [
+                          ElevatedButton(
+                            onPressed: () => Navigator.pop(errCtx),
+                            child: const Text('OK'),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                }
+              },
+              child: Text(replaceMode ? 'Replace & Restore' : 'Merge & Restore'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   void _confirmClearHistory(BuildContext context) {
     bool keepFavorites = true;
@@ -245,7 +533,56 @@ class SettingsScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 24),
 
-                // 2. Default QR Preferences (Requirement)
+                // 2. Scanner Preferences (Requirement 9 & 19)
+                _sectionHeader(context, 'Scanner Preferences'),
+                const SizedBox(height: 8),
+
+                Card(
+                  child: Column(
+                    children: [
+                      SwitchListTile(
+                        value: storageService.confirmBeforeOpen,
+                        activeThumbColor: AppColors.primary,
+                        title: const Text(
+                          'Confirm Before Opening Actions',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        subtitle: const Text(
+                          'Prompt for confirmation before launching websites, phone calls, or emails',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                        onChanged: (val) {
+                          storageService.setConfirmBeforeOpen(val);
+                        },
+                      ),
+                      const Divider(height: 1),
+                      SwitchListTile(
+                        value: storageService.scannerTorchDefault,
+                        activeThumbColor: AppColors.primary,
+                        title: const Text(
+                          'Default Flashlight in Scanner',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        subtitle: const Text(
+                          'Automatically enable flashlight when launching scanner',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                        onChanged: (val) {
+                          storageService.setScannerTorchDefault(val);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // 3. Default QR Preferences (Requirement)
                 _sectionHeader(context, 'Default QR Preferences'),
                 const SizedBox(height: 8),
 
@@ -615,7 +952,74 @@ class SettingsScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 24),
 
-                // 3. Privacy & Security Section
+                // 4. Backup & Restore (Requirement 17)
+                _sectionHeader(context, 'Backup & Restore (JSON Schema v2)'),
+                const SizedBox(height: 8),
+
+                Card(
+                  child: Column(
+                    children: [
+                      ListTile(
+                        leading: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(
+                            Icons.cloud_upload_outlined,
+                            color: Colors.blue,
+                            size: 20,
+                          ),
+                        ),
+                        title: const Text(
+                          'Export Data Backup',
+                          style: TextStyle(
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        subtitle: const Text(
+                          'Export full history, scans, favorites, notes, and collections to JSON',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                        trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+                        onTap: () => _exportBackup(context),
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.teal.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(
+                            Icons.cloud_download_outlined,
+                            color: Colors.teal,
+                            size: 20,
+                          ),
+                        ),
+                        title: const Text(
+                          'Restore from Backup',
+                          style: TextStyle(
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        subtitle: const Text(
+                          'Import JSON backup with Merge or Replace options and validation',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                        trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+                        onTap: () => _restoreBackup(context),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // 5. Privacy & Security Section
                 _sectionHeader(context, 'Privacy & Security'),
                 const SizedBox(height: 8),
 

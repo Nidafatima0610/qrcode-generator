@@ -6,6 +6,7 @@ import 'package:qrcode_generator/core/models/qr_item.dart';
 import 'package:qrcode_generator/core/models/qr_type.dart';
 import 'package:qrcode_generator/core/models/scan_item.dart';
 import 'package:qrcode_generator/core/services/storage_service.dart';
+import 'package:qrcode_generator/core/services/qr_sharing_service.dart';
 import 'package:qrcode_generator/presentation/screens/create/create_screen.dart';
 import 'package:qrcode_generator/presentation/screens/preview/qr_preview_screen.dart';
 import 'package:qrcode_generator/presentation/screens/scanner/scan_result_screen.dart';
@@ -33,12 +34,14 @@ class HistoryScreen extends StatefulWidget {
   final StorageService storageService;
   final Function(int tabIndex, [QrType? initialType]) onNavigateToTab;
   final int initialSubTab; // 0 = Generated, 1 = Favorites, 2 = Scans
+  final String? initialCollection;
 
   const HistoryScreen({
     super.key,
     required this.storageService,
     required this.onNavigateToTab,
     this.initialSubTab = 0,
+    this.initialCollection,
   });
 
   @override
@@ -50,6 +53,7 @@ class HistoryScreenState extends State<HistoryScreen>
   late TabController _tabController;
   final TextEditingController _searchController = TextEditingController();
   QrType? _selectedFilterType;
+  String? _selectedCollection;
   HistorySortOption _currentSort = HistorySortOption.newest;
 
   // Multi-select state
@@ -59,6 +63,7 @@ class HistoryScreenState extends State<HistoryScreen>
   @override
   void initState() {
     super.initState();
+    _selectedCollection = widget.initialCollection;
     _tabController = TabController(
       length: 3,
       vsync: this,
@@ -79,6 +84,11 @@ class HistoryScreenState extends State<HistoryScreen>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.initialSubTab != widget.initialSubTab) {
       _tabController.animateTo(widget.initialSubTab);
+    }
+    if (oldWidget.initialCollection != widget.initialCollection) {
+      setState(() {
+        _selectedCollection = widget.initialCollection;
+      });
     }
   }
 
@@ -300,12 +310,18 @@ class HistoryScreenState extends State<HistoryScreen>
     var filtered = items.where((item) {
       final matchesType =
           _selectedFilterType == null || item.type == _selectedFilterType;
+      final matchesCollection = _selectedCollection == null ||
+          item.collection == _selectedCollection;
       final matchesSearch = query.isEmpty ||
           item.title.toLowerCase().contains(query) ||
           item.subtitle.toLowerCase().contains(query) ||
           item.rawPayload.toLowerCase().contains(query) ||
-          item.type.label.toLowerCase().contains(query);
-      return matchesType && matchesSearch;
+          item.type.label.toLowerCase().contains(query) ||
+          (item.collection != null &&
+              item.collection!.toLowerCase().contains(query)) ||
+          (item.note != null &&
+              item.note!.toLowerCase().contains(query));
+      return matchesType && matchesCollection && matchesSearch;
     }).toList();
 
     switch (_currentSort) {
@@ -533,6 +549,36 @@ class HistoryScreenState extends State<HistoryScreen>
                             },
                     ),
                 ],
+                // Bulk Share selected (Requirement 7)
+                IconButton(
+                  icon: const Icon(Icons.share_rounded),
+                  tooltip: 'Bulk Share Selected',
+                  onPressed: _selectedItemIds.isEmpty
+                      ? null
+                      : () {
+                          final selectedList = currentActiveItems
+                              .where((e) => _selectedItemIds.contains(e.id))
+                              .toList();
+                          if (selectedList.isEmpty) return;
+                          final text = selectedList.map((e) {
+                            if (e is QrItem) {
+                              final noteText =
+                                  e.note != null && e.note!.isNotEmpty
+                                      ? '\nNote: ${e.note}'
+                                      : '';
+                              return '=== ${e.title} (${e.type.label}) ===\nContent: ${e.rawPayload}$noteText';
+                            } else if (e is ScanItem) {
+                              return '=== ${e.title} (${e.detectedType.label}) ===\nContent: ${e.rawContent}';
+                            }
+                            return '';
+                          }).join('\n\n---\n\n');
+
+                          QrSharingService.shareText(
+                            text: text,
+                            subject: 'Export of ${selectedList.length} QR Codes',
+                          );
+                        },
+                ),
                 // Delete selected
                 IconButton(
                   icon:
@@ -670,6 +716,43 @@ class HistoryScreenState extends State<HistoryScreen>
                   ),
                 ),
               ),
+
+              // 1.5 Collection Category Filter Chips (Requirement 12)
+              if (widget.storageService.collections.isNotEmpty &&
+                  _tabController.index != 2) ...[
+                SizedBox(
+                  height: 34,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    children: [
+                      _buildFilterChip(
+                        label: 'All Collections',
+                        isSelected: _selectedCollection == null,
+                        color: AppColors.secondary,
+                        onTap: () => setState(() => _selectedCollection = null),
+                      ),
+                      ...widget.storageService.collections.map((collection) {
+                        return Padding(
+                          padding: const EdgeInsets.only(left: 6),
+                          child: _buildFilterChip(
+                            label: collection,
+                            isSelected: _selectedCollection == collection,
+                            color: AppColors.secondary,
+                            onTap: () => setState(() {
+                              _selectedCollection =
+                                  _selectedCollection == collection
+                                      ? null
+                                      : collection;
+                            }),
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 6),
+              ],
 
               // 2. Format Category Filter Chips
               SizedBox(
@@ -1064,13 +1147,79 @@ class HistoryScreenState extends State<HistoryScreen>
                   ),
 
                   if (!_isSelectionMode) ...[
-                    // Delete Scan Record
-                    IconButton(
-                      icon: const Icon(Icons.delete_outline_rounded, size: 19),
-                      tooltip: 'Delete scan record',
-                      onPressed: () async {
-                        await widget.storageService.deleteScanItem(item.id);
+                    PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_vert_rounded, size: 20),
+                      tooltip: 'Scan actions',
+                      onSelected: (val) async {
+                        if (val == 'open') {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => ScanResultScreen(
+                                scanItem: item,
+                                storageService: widget.storageService,
+                              ),
+                            ),
+                          );
+                        } else if (val == 'copy') {
+                          QrSharingService.copyToClipboard(
+                            context,
+                            item.rawContent,
+                            message: 'Copied "${item.title}" to clipboard',
+                          );
+                        } else if (val == 'share') {
+                          QrSharingService.shareText(
+                            text: item.rawContent,
+                            subject: item.title,
+                          );
+                        } else if (val == 'delete') {
+                          await widget.storageService.deleteScanItem(item.id);
+                        }
                       },
+                      itemBuilder: (ctx) => const [
+                        PopupMenuItem(
+                          value: 'open',
+                          child: Row(
+                            children: [
+                              Icon(Icons.visibility_outlined, size: 18),
+                              SizedBox(width: 8),
+                              Text('Open Result'),
+                            ],
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'copy',
+                          child: Row(
+                            children: [
+                              Icon(Icons.copy_rounded, size: 18),
+                              SizedBox(width: 8),
+                              Text('Copy Content'),
+                            ],
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'share',
+                          child: Row(
+                            children: [
+                              Icon(Icons.share_outlined, size: 18),
+                              SizedBox(width: 8),
+                              Text('Share'),
+                            ],
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'delete',
+                          child: Row(
+                            children: [
+                              Icon(Icons.delete_outline_rounded,
+                                  size: 18, color: AppColors.error),
+                              SizedBox(width: 8),
+                              Text('Delete',
+                                  style: TextStyle(color: AppColors.error)),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ],
@@ -1148,7 +1297,10 @@ class HistoryScreenState extends State<HistoryScreen>
             OutlinedButton(
               onPressed: () {
                 _searchController.clear();
-                setState(() => _selectedFilterType = null);
+                setState(() {
+                  _selectedFilterType = null;
+                  _selectedCollection = null;
+                });
               },
               child: const Text('Reset Search & Filter'),
             ),
